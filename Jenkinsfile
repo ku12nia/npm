@@ -50,7 +50,7 @@ pipeline {
                     
                     // Menggunakan token/credential GitHub untuk push kembali ke repo
                     withCredentials([gitUsernamePassword(credentialsId: 'github-access-token')]) {
-                        sh 'git push origin main'
+                        sh 'git push origin HEAD:main'
                     }
                 }
             }
