@@ -1,0 +1,9 @@
+﻿{
+  "name": "test-pipeline",
+  "version": "1.0.0",
+  "description": "Uji coba pipeline",
+  "main": "index.js",
+  "scripts": {
+    "test": "node index.js"
+  }
+}
