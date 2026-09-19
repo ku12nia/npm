@@ -1,4 +1,4 @@
-﻿pipeline {
+pipeline {
     agent {
         kubernetes {
             yaml """
@@ -18,7 +18,7 @@ spec:
     }
     environment {
         DOCKER_IMAGE = "ku12nia/jenkins-slave-alpine"
-        TAG = ""
+        TAG = "${env.BUILD_NUMBER}"
     }
     stages {
         stage('1. Checkout Code') {
@@ -37,10 +37,10 @@ spec:
         stage('3. Build & Push Docker Image') {
             steps {
                 container('node-builder') {
-                    sh "docker build -t : ."
-                    sh "docker tag : :latest"
-                    sh "docker push :"
-                    sh "docker push :latest"
+                    sh "docker build -t ${env.DOCKER_IMAGE}:${env.TAG} ."
+                    sh "docker tag ${env.DOCKER_IMAGE}:${env.TAG} ${env.DOCKER_IMAGE}:latest"
+                    sh "docker push ${env.DOCKER_IMAGE}:${env.TAG}"
+                    sh "docker push ${env.DOCKER_IMAGE}:latest"
                 }
             }
         }
