@@ -56,8 +56,7 @@ pipeline {
                         }
                         echo "🚀 Berhasil push update ke GitHub! Silahkan cek ArgoCD."
                     } else {
-                        echo "⚠️ Tidak ada perubahan pada manifest, skip git commit & push."
-                        echo "🔍 Silahkan cek ArgoCD."
+                        echo "⚠️ Tidak ada perubahan pada manifest, skip git commit & push, Silahkan cek ArgoCD."
                     }
                 }
             }
