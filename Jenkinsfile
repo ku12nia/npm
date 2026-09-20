@@ -11,6 +11,7 @@ pipeline {
                         // Karena publik, parameter credentialsId tidak perlu ditulis/dikosongkan
                     ]]
                 ])
+                echo "✅ Berhasil checkout dari GitHub yang didaftarkan."
             }
         }
         stage('2. Test App') {
