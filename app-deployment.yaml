@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
       - name: node-app
-        image: ku12nia/jenkins-slave-alpine:24
+        image: ku12nia/nodejs:24
         ports:
         - containerPort: 3000
 ---
