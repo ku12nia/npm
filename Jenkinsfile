@@ -68,7 +68,7 @@ pipeline {
                         curl -sSL -o argocd https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
                         chmod +x argocd
                     '''
-                    def hasArgocd = sh(script: 'command -v argocd > /dev/null 2>&1', returnStatus: true) == 0
+                    def hasArgocd = sh(script: 'test -x ./argocd', returnStatus: true) == 0
                     if (hasArgocd) {
                         sh '''
                             argocd app create node-app \
