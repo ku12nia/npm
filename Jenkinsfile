@@ -68,29 +68,39 @@ pipeline {
                 }
             }
         }
-        stage('5. Ensure ArgoCD App Exists (Conditional)') {
+        stage('5. Ensure ArgoCD App Exists (Dynamic Agent)') {
+            agent {
+                docker {
+                    // Menggunakan image alpine/k8s yang sudah ada kubectl dan argocd CLI di dalamnya
+                    image 'alpine/k8s:1.28.2'
+                    args '--user root'
+                }
+            }
             steps {
                 script {
-                    // Cek apakah command argocd terinstal di server/agent
-                    def hasArgocdCli = sh(script: 'command -v argocd > /dev/null 2>&1', returnStatus: true) == 0
-                    
-                    if (hasArgocdCli) {
-                        echo "ArgoCD CLI ditemukan, mendaftarkan/memperbarui aplikasi..."
-                        sh '''
-                            argocd app create node-app \
-                            --repo https://github.com/ku12nia/npm.git \
-                            --path . \
-                            --dest-server https://kubernetes.default.svc \
-                            --dest-namespace apps \
-                            --sync-policy automated \
-                            --upsert
-                        '''
-                    } else {
-                        echo "⚠️ ArgoCD CLI tidak ditemukan di agent Jenkins. Melewatkan stage ini (Silahkan pastikan aplikasi sudah terdaftar di UI ArgoCD)."
-                    }
+                    echo "⚠️ Menjalankan ArgoCD Agent via CLI..."
+                    // 1. Login dulu ke ArgoCD server (ambil password/token dari Jenkins Credentials)
+                    // Ganti URL, username, dan password sesuai server ArgoCD Anda
+                    sh '''
+                        argocd login <ARGOCD_SERVER_IP_OR_DOMAIN> \
+                        --username admin \
+                        --password 'USrwCKyHLfSgZPGp' \
+                        --insecure
+                    '''
+                    // 2. Buat atau update aplikasinya secara otomatis
+                    sh '''
+                        argocd app create node-app \
+                        --repo https://github.com/ku12nia/npm.git \
+                        --path . \
+                        --dest-server https://kubernetes.default.svc \
+                        --dest-namespace apps \
+                        --sync-policy automated \
+                        --upsert
+                    '''
                 }
             }
         }
+
 // -- stage selanjutnya
     }
 }
