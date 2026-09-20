@@ -43,7 +43,7 @@ pipeline {
                     echo "Mengupdate tag di app-deployment.yaml menjadi version: ${imageTag}"
                     // Mengubah baris image di file app-deployment.yaml secara otomatis menggunakan sed
                     sh """
-                        sed -i 's|image: ku12nia/nodejs:.*|image: ku12nia/nodejs:${imageTag}|g' app-deployment.yaml
+                        sed -i 's|image: ku12nia/nodejs:.*|image: ku12nia/nodejs:${imageTag}|g' k8s/app-deployment.yaml
                     """
                     // Konfigurasi git user untuk agent Jenkins
                     sh 'git config --global user.email "jenkins@local.com"'
@@ -51,7 +51,7 @@ pipeline {
                     // Cek apakah ada perubahan file sebelum melakukan commit & push
                     def changes = sh(script: 'git status --porcelain', returnStdout: true).trim()
                     if (changes) {
-                        sh 'git add app-deployment.yaml'
+                        sh 'git add k8s/app-deployment.yaml'
                         sh 'git commit -m "ci(argocd): update image tag to ${imageTag}"'
                         withCredentials([gitUsernamePassword(credentialsId: 'github-access-token')]) {
                             sh 'git push origin HEAD:main'
@@ -80,7 +80,7 @@ pipeline {
                             # 2. Baru create aplikasinya
                             ./argocd app create node-app \
                             --repo https://github.com/ku12nia/npm.git \
-                            --path . \
+                            --path k8s \
                             --dest-server https://kubernetes.default.svc \
                             --dest-namespace apps \
                             --sync-policy automated \
