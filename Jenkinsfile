@@ -3,8 +3,14 @@ pipeline {
     stages {
         stage('1. Checkout Code') {
             steps {
-                checkout scm
-            }
+                checkout([
+                    $class: 'GitSCM',
+                    branches: [[name: '*/main']], // Sesuaikan branch utama Anda (misal: main atau master)
+                    userRemoteConfigs: [[
+                        url: 'https://github.com/ku12nia/npm.git' 
+                        // Karena publik, parameter credentialsId tidak perlu ditulis/dikosongkan
+                    ]]
+                ])
         }
         stage('2. Test App') {
             steps {
