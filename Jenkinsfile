@@ -71,6 +71,8 @@ pipeline {
                     '''
                     def hasArgocd = sh(script: 'test -x ./argocd', returnStatus: true) == 0
                     if (hasArgocd) {
+                        def argocdServer = "host.docker.internal:8081"
+                        def argocdPass = "USrwCKyHLfSgZPGp"
                         sh '''
                             ./argocd app create node-app \
                             --repo https://github.com/ku12nia/npm.git \
