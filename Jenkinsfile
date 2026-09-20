@@ -18,10 +18,19 @@ pipeline {
             steps {
                 nodejs('NodeJS LTS') {
                     sh 'npm install'
+                    // Jalankan Jest, hasilkan file XML dan folder coverage
+                    sh 'npx jest --ci --coverage --reporters=default --reporters=jest-junit'
                     echo "✅ Unit Test Berhasil."
                 }
             }
+            post {
+                always {
+                    // Menangkap file XML dan memunculkan grafik Test Result di dashboard
+                    junit 'junit.xml'
+                }
+            }
         }
+   
         stage('3. Build & Push Docker Image') {
             steps {
                 // Menggunakan nomor build Jenkins sebagai tag dinamis
@@ -56,7 +65,7 @@ pipeline {
                         withCredentials([gitUsernamePassword(credentialsId: 'github-access-token')]) {
                             sh 'git push origin HEAD:main'
                         }
-                        echo "🚀 Berhasil push update ke GitHub! Auto sync ArgoCD."
+                        echo "🚀 Berhasil push update ke GitHub! Menjalankan sinkronisasi ke ArgoCD."
                     } else {
                         echo "⚠️ Tidak ada perubahan pada manifest, skip git commit & push, Auto sync ArgoCD."
                     }
@@ -86,7 +95,7 @@ pipeline {
                             --sync-policy automated \
                             --upsert
                         """
-                        echo "✅ Berhasil sinkronisasi aplikasi ke ArgoCD!"
+                        echo "✅ Berhasil sinkronisasi aplikasi ke ArgoCD."
                     } else {
                         echo "⚠️ Perintah 'argocd' tidak ditemukan di agent ini. Melewatkan stage (Pipeline tetap sukses)."
                     }
