@@ -17,7 +17,7 @@ pipeline {
             steps {
                 nodejs('NodeJS LTS') {
                     sh 'npm install'
-                    echo "Unit testing berhasil!"
+                    echo "✅ Unit Test Berhasil."
                 }
             }
         }
@@ -31,6 +31,7 @@ pipeline {
                     // Pastikan credential Docker sudah diset di Jenkins jika private, kalau public cukup langsung push:
                     sh "docker push ku12nia/nodejs:${imageTag}"
                     sh "docker push ku12nia/nodejs:latest"
+                    echo "🚀 Berhasil push update ke Docker Hub"
                 }
             }
         }
@@ -54,9 +55,9 @@ pipeline {
                         withCredentials([gitUsernamePassword(credentialsId: 'github-access-token')]) {
                             sh 'git push origin HEAD:main'
                         }
-                        echo "🚀 Berhasil push update ke GitHub! Silahkan cek ArgoCD."
+                        echo "🚀 Berhasil push update ke GitHub! Auto sync ArgoCD."
                     } else {
-                        echo "⚠️ Tidak ada perubahan pada manifest, skip git commit & push, Silahkan cek ArgoCD."
+                        echo "⚠️ Tidak ada perubahan pada manifest, skip git commit & push, Auto sync ArgoCD."
                     }
                 }
             }
@@ -71,7 +72,7 @@ pipeline {
                     def hasArgocd = sh(script: 'test -x ./argocd', returnStatus: true) == 0
                     if (hasArgocd) {
                         sh '''
-                            argocd app create node-app \
+                            ./argocd app create node-app \
                             --repo https://github.com/ku12nia/npm.git \
                             --path . \
                             --dest-server https://kubernetes.default.svc \
