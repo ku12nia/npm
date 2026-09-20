@@ -65,8 +65,10 @@ pipeline {
         stage('5. Ensure ArgoCD App Exists (Safe CLI)') {
             steps {
                 script {
-                    echo "Mencoba mendaftarkan/memperbarui aplikasi ke ArgoCD..."
-                    // Menggunakan sh langsung, dengan pengecekan apakah command argocd ada
+                    sh '''
+                        curl -sSL -o argocd https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
+                        chmod +x argocd
+                    '''
                     def hasArgocd = sh(script: 'command -v argocd > /dev/null 2>&1', returnStatus: true) == 0
                     if (hasArgocd) {
                         sh '''
