@@ -68,6 +68,24 @@ pipeline {
                 }
             }
         }
+        stage('5. Ensure ArgoCD App Exists (Dynamic)') {
+            steps {
+                script {
+                    echo "Memastikan aplikasi terdaftar secara otomatis di ArgoCD..."
+                    // Perintah ini akan otomatis membuat atau memperbarui konfigurasi ArgoCD 
+                    // dengan path dan namespace tujuan tanpa perlu klik manual di web UI.
+                    sh '''
+                        argocd app create node-app \
+                        --repo https://github.com/ku12nia/npm.git \
+                        --path . \
+                        --dest-server https://kubernetes.default.svc \
+                        --dest-namespace apps \
+                        --sync-policy automated \
+                        --upsert || true
+                    '''
+                }
+            }
+        }
 // -- stage selanjutnya
     }
 }
