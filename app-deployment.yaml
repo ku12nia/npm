@@ -1,17 +1,17 @@
 ﻿apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: sample-node-app
-  namespace: default
+  name: node-app
+  namespace: apps
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: sample-node-app
+      app: node-app
   template:
     metadata:
       labels:
-        app: sample-node-app
+        app: node-app
     spec:
       containers:
       - name: node-app
@@ -22,12 +22,12 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: sample-node-app-service
-  namespace: default
+  name: node-app-service
+  namespace: apps
 spec:
   type: NodePort
   selector:
-    app: sample-node-app
+    app: node-app
   ports:
     - port: 80
       targetPort: 3000
