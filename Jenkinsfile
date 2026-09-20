@@ -75,6 +75,9 @@ pipeline {
                         def argocdServer = "host.docker.internal:8081"
                         def argocdPass = "USrwCKyHLfSgZPGp"
                         sh """
+                            # 1. Login dulu ke server ArgoCD
+                            ./argocd login ${argocdServer} --username admin --password ${argocdPass} --insecure
+                            # 2. Baru create aplikasinya
                             ./argocd app create node-app \
                             --repo https://github.com/ku12nia/npm.git \
                             --path . \
