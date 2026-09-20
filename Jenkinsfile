@@ -60,25 +60,14 @@ pipeline {
                         withCredentials([gitUsernamePassword(credentialsId: 'github-access-token')]) {
                             sh 'git push origin HEAD:main'
                         }
+                        echo "🚀 Berhasil push update ke GitHub! Silahkan cek ArgoCD."
                     } else {
-                        echo "Tidak ada perubahan pada manifest, melewatkan git commit & push."
+                        echo "⚠️ Tidak ada perubahan pada manifest, skip git commit & push."
+                        echo "🔍 Silahkan cek ArgoCD."
                     }
                 }
             }
         }
-        stage('5. Deploy to Kubernetes via Kubectl') {
-            steps {
-                script {
-                    def imageTag = "${env.BUILD_NUMBER}"
-                    echo "Mendeploy aplikasi versi ${imageTag} ke Kubernetes..."
-                    
-                    // Jalankan perintah kubectl apply langsung dari Jenkins
-                    // Pastikan kubeconfig sudah terkonfigurasi di server Jenkins
-                    sh 'kubectl apply -f app-deployment.yaml -n apps'
-                    
-                    echo "Deployment berhasil dan otomatis ter-trigger oleh Jenkins!"
-                }
-            }
-        }
+// -- stage selanjutnya
     }
 }
