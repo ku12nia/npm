@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
       - name: node-app
-        image: ku12nia/nodejs:10
+        image: ku12nia/nodejs:11
         imagePullPolicy: Always
         ports:
         - containerPort: 3000
