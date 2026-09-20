@@ -28,9 +28,7 @@ pipeline {
                     def imageTag = "${env.BUILD_NUMBER}"
                     sh "docker build -t ku12nia/nodejs:${imageTag} ."
                     sh "docker tag ku12nia/nodejs:${imageTag} ku12nia/nodejs:latest"
-                    
-                    // Pastikan credential Docker sudah diset di Jenkins jika private, 
-                    // kalau public cukup langsung push:
+                    // Pastikan credential Docker sudah diset di Jenkins jika private, kalau public cukup langsung push:
                     sh "docker push ku12nia/nodejs:${imageTag}"
                     sh "docker push ku12nia/nodejs:latest"
                 }
@@ -41,22 +39,18 @@ pipeline {
                 script {
                     def imageTag = "${env.BUILD_NUMBER}"
                     echo "Mengupdate tag di app-deployment.yaml menjadi version: ${imageTag}"
-                    
                     // Mengubah baris image di file app-deployment.yaml secara otomatis menggunakan sed
                     sh """
                         sed -i 's|image: ku12nia/nodejs:.*|image: ku12nia/nodejs:${imageTag}|g' app-deployment.yaml
                     """
-                    
                     // Konfigurasi git user untuk agent Jenkins
                     sh 'git config --global user.email "jenkins@local.com"'
                     sh 'git config --global user.name "Jenkins Automation"'
-                    
                     // Cek apakah ada perubahan file sebelum melakukan commit & push
                     def changes = sh(script: 'git status --porcelain', returnStdout: true).trim()
                     if (changes) {
                         sh 'git add app-deployment.yaml'
                         sh 'git commit -m "ci(argocd): update image tag to ${imageTag}"'
-                        
                         withCredentials([gitUsernamePassword(credentialsId: 'github-access-token')]) {
                             sh 'git push origin HEAD:main'
                         }
@@ -68,39 +62,29 @@ pipeline {
                 }
             }
         }
-        stage('5. Ensure ArgoCD App Exists (Dynamic Agent)') {
-            agent {
-                docker {
-                    // Menggunakan image alpine/k8s yang sudah ada kubectl dan argocd CLI di dalamnya
-                    image 'alpine/k8s:1.28.2'
-                    args '--user root'
-                }
-            }
+        stage('5. Ensure ArgoCD App Exists (Safe CLI)') {
             steps {
                 script {
-                    echo "⚠️ Menjalankan ArgoCD Agent via CLI..."
-                    // 1. Login dulu ke ArgoCD server (ambil password/token dari Jenkins Credentials)
-                    // Ganti URL, username, dan password sesuai server ArgoCD Anda
-                    sh '''
-                        argocd login <ARGOCD_SERVER_IP_OR_DOMAIN> \
-                        --username admin \
-                        --password 'USrwCKyHLfSgZPGp' \
-                        --insecure
-                    '''
-                    // 2. Buat atau update aplikasinya secara otomatis
-                    sh '''
-                        argocd app create node-app \
-                        --repo https://github.com/ku12nia/npm.git \
-                        --path . \
-                        --dest-server https://kubernetes.default.svc \
-                        --dest-namespace apps \
-                        --sync-policy automated \
-                        --upsert
-                    '''
+                    echo "Mencoba mendaftarkan/memperbarui aplikasi ke ArgoCD..."
+                    // Menggunakan sh langsung, dengan pengecekan apakah command argocd ada
+                    def hasArgocd = sh(script: 'command -v argocd > /dev/null 2>&1', returnStatus: true) == 0
+                    if (hasArgocd) {
+                        sh '''
+                            argocd app create node-app \
+                            --repo https://github.com/ku12nia/npm.git \
+                            --path . \
+                            --dest-server https://kubernetes.default.svc \
+                            --dest-namespace apps \
+                            --sync-policy automated \
+                            --upsert
+                        '''
+                        echo "✅ Berhasil sinkronisasi aplikasi ke ArgoCD!"
+                    } else {
+                        echo "⚠️ Perintah 'argocd' tidak ditemukan di agent ini. Melewatkan stage (Pipeline tetap sukses)."
+                    }
                 }
             }
         }
-
 // -- stage selanjutnya
     }
 }
