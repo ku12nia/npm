@@ -11,6 +11,7 @@ pipeline {
                         // Karena publik, parameter credentialsId tidak perlu ditulis/dikosongkan
                     ]]
                 ])
+            }
         }
         stage('2. Test App') {
             steps {
