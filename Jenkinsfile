@@ -36,7 +36,7 @@ pipeline {
                 }
             }
         }
-        stage('4. Trigger ArgoCD via Git Manifest Update') {
+        stage('4. Git Manifest Update via Trigged ArgoCD') {
             steps {
                 script {
                     def imageTag = "${env.BUILD_NUMBER}"
@@ -63,6 +63,20 @@ pipeline {
                     } else {
                         echo "Tidak ada perubahan pada manifest, melewatkan git commit & push."
                     }
+                }
+            }
+        }
+        stage('5. Deploy to Kubernetes via Kubectl') {
+            steps {
+                script {
+                    def imageTag = "${env.BUILD_NUMBER}"
+                    echo "Mendeploy aplikasi versi ${imageTag} ke Kubernetes..."
+                    
+                    // Jalankan perintah kubectl apply langsung dari Jenkins
+                    // Pastikan kubeconfig sudah terkonfigurasi di server Jenkins
+                    sh 'kubectl apply -f app-deployment.yaml -n apps'
+                    
+                    echo "Deployment berhasil dan otomatis ter-trigger oleh Jenkins!"
                 }
             }
         }
