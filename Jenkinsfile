@@ -26,13 +26,13 @@ pipeline {
                 // Menggunakan nomor build Jenkins sebagai tag dinamis
                 script {
                     def imageTag = "${env.BUILD_NUMBER}"
-                    sh "docker build -t ku12nia/jenkins-slave-alpine:${imageTag} ."
-                    sh "docker tag ku12nia/jenkins-slave-alpine:${imageTag} ku12nia/jenkins-slave-alpine:latest"
+                    sh "docker build -t ku12nia/nodejs:${imageTag} ."
+                    sh "docker tag ku12nia/nodejs:${imageTag} ku12nia/nodejs:latest"
                     
                     // Pastikan credential Docker sudah diset di Jenkins jika private, 
                     // kalau public cukup langsung push:
-                    sh "docker push ku12nia/jenkins-slave-alpine:${imageTag}"
-                    sh "docker push ku12nia/jenkins-slave-alpine:latest"
+                    sh "docker push ku12nia/nodejs:${imageTag}"
+                    sh "docker push ku12nia/nodejs:latest"
                 }
             }
         }
@@ -44,12 +44,12 @@ pipeline {
                     
                     // Mengubah baris image di file app-deployment.yaml secara otomatis menggunakan sed
                     sh """
-                        sed -i 's|image: ku12nia/jenkins-slave-alpine:.*|image: ku12nia/jenkins-slave-alpine:${imageTag}|g' app-deployment.yaml
+                        sed -i 's|image: ku12nia/nodejs:.*|image: ku12nia/nodejs:${imageTag}|g' app-deployment.yaml
                     """
                     
                     // Konfigurasi git user untuk agent Jenkins
                     sh 'git config --global user.email "jenkins@local.com"'
-                    sh 'git config --global user.name "Jenkins Automation"'
+                    sh 'git config --global user.name "Jenkins Automation by Dedi Moh. Kurnia"'
                     
                     // Commit dan push perubahan YAML ke GitHub agar ArgoCD otomatis mendeteksi
                     sh 'git add app-deployment.yaml'
