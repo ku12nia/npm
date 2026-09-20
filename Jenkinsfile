@@ -17,8 +17,9 @@ pipeline {
         stage('2. Test App') {
             steps {
                 nodejs('NodeJS LTS') {
+                    sh "sed -i '1s/^\\xEF\\xBB\\xBF//' package.json"
                     sh 'npm install'
-                    // Jalankan Jest, hasilkan file XML dan folder coverage
+                    sh 'npm install --save-dev jest jest-junit'
                     sh 'npx jest --ci --coverage --reporters=default --reporters=jest-junit'
                     echo "✅ Unit Test Berhasil."
                 }
