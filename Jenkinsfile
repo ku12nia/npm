@@ -68,21 +68,26 @@ pipeline {
                 }
             }
         }
-        stage('5. Ensure ArgoCD App Exists (Dynamic)') {
+        stage('5. Ensure ArgoCD App Exists (Conditional)') {
             steps {
                 script {
-                    echo "Memastikan aplikasi terdaftar secara otomatis di ArgoCD..."
-                    // Perintah ini akan otomatis membuat atau memperbarui konfigurasi ArgoCD 
-                    // dengan path dan namespace tujuan tanpa perlu klik manual di web UI.
-                    sh '''
-                        argocd app create node-app \
-                        --repo https://github.com/ku12nia/npm.git \
-                        --path . \
-                        --dest-server https://kubernetes.default.svc \
-                        --dest-namespace apps \
-                        --sync-policy automated \
-                        --upsert || true
-                    '''
+                    // Cek apakah command argocd terinstal di server/agent
+                    def hasArgocdCli = sh(script: 'command -v argocd > /dev/null 2>&1', returnStatus: true) == 0
+                    
+                    if (hasArgocdCli) {
+                        echo "ArgoCD CLI ditemukan, mendaftarkan/memperbarui aplikasi..."
+                        sh '''
+                            argocd app create node-app \
+                            --repo https://github.com/ku12nia/npm.git \
+                            --path . \
+                            --dest-server https://kubernetes.default.svc \
+                            --dest-namespace apps \
+                            --sync-policy automated \
+                            --upsert
+                        '''
+                    } else {
+                        echo "⚠️ ArgoCD CLI tidak ditemukan di agent Jenkins. Melewatkan stage ini (Silahkan pastikan aplikasi sudah terdaftar di UI ArgoCD)."
+                    }
                 }
             }
         }
