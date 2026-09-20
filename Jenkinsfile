@@ -49,15 +49,19 @@ pipeline {
                     
                     // Konfigurasi git user untuk agent Jenkins
                     sh 'git config --global user.email "jenkins@local.com"'
-                    sh 'git config --global user.name "Jenkins Automation by Dedi Moh. Kurnia"'
+                    sh 'git config --global user.name "Jenkins Automation"'
                     
-                    // Commit dan push perubahan YAML ke GitHub agar ArgoCD otomatis mendeteksi
-                    sh 'git add app-deployment.yaml'
-                    sh 'git commit -m "ci(argocd): update image tag to ${imageTag}"'
-                    
-                    // Menggunakan token/credential GitHub untuk push kembali ke repo
-                    withCredentials([gitUsernamePassword(credentialsId: 'github-access-token')]) {
-                        sh 'git push origin HEAD:main'
+                    // Cek apakah ada perubahan file sebelum melakukan commit & push
+                    def changes = sh(script: 'git status --porcelain', returnStdout: true).trim()
+                    if (changes) {
+                        sh 'git add app-deployment.yaml'
+                        sh 'git commit -m "ci(argocd): update image tag to ${imageTag}"'
+                        
+                        withCredentials([gitUsernamePassword(credentialsId: 'github-access-token')]) {
+                            sh 'git push origin HEAD:main'
+                        }
+                    } else {
+                        echo "Tidak ada perubahan pada manifest, melewatkan git commit & push."
                     }
                 }
             }
