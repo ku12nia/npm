@@ -74,7 +74,7 @@ pipeline {
                     if (hasArgocd) {
                         def argocdServer = "host.docker.internal:8081"
                         def argocdPass = "USrwCKyHLfSgZPGp"
-                        sh '''
+                        sh """
                             ./argocd app create node-app \
                             --repo https://github.com/ku12nia/npm.git \
                             --path . \
@@ -82,7 +82,7 @@ pipeline {
                             --dest-namespace apps \
                             --sync-policy automated \
                             --upsert
-                        '''
+                        """
                         echo "✅ Berhasil sinkronisasi aplikasi ke ArgoCD!"
                     } else {
                         echo "⚠️ Perintah 'argocd' tidak ditemukan di agent ini. Melewatkan stage (Pipeline tetap sukses)."
