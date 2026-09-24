@@ -50,11 +50,8 @@ pipeline {
                     } else {
                         echo "✅ Docker CLI sudah tersedia."
                     }
-
-                    // 2. Jalankan Unit Test
-                    echo "🛠️ Menjalankan Unit Test via Docker (Container sementara)"
+                    echo "🛠️ Menjalankan Unit Test via Docker"
                     sh """
-                    docker run --rm -v \${WORKSPACE}:/app -w /app node:22-alpine sh -c "\
                         sed -i '1s/^\\\\xEF\\\\xBB\\\\xBF//' package.json && \
                         npm install && \
                         npm install --save-dev jest jest-junit && \
