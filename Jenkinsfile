@@ -1,14 +1,27 @@
 pipeline {
     agent any
+    parameters {
+        choice(name: 'DEPLOY_ENV', choices: ['dev', 'staging', 'prod'], description: 'Pilih target environment untuk deployment')
+    }
+    options {
+        buildDiscarder(logRotator(numToKeepStr: '10'))
+    }
     stages {
+        stage('0. Setup Build Name') {
+            steps {
+                script {
+                    currentBuild.displayName = "#${env.BUILD_NUMBER} - ${params.DEPLOY_ENV}"
+                }
+            }
+        }
         stage('1. Checkout Code') {
             steps {
                 checkout([
                     $class: 'GitSCM',
-                    branches: [[name: '*/main']], // Sesuaikan branch utama Anda (misal: main atau master)
+                    branches: [[name: '*/main']],
                     userRemoteConfigs: [[
                         url: 'https://github.com/ku12nia/npm.git' 
-                        // Karena publik, parameter credentialsId tidak perlu ditulis/dikosongkan
+                        // Perlu define config jika repo private
                     ]]
                 ])
                 echo "✅ Berhasil checkout dari GitHub yang didaftarkan."
@@ -26,72 +39,73 @@ pipeline {
             }
             post {
                 always {
-                    // Menangkap file XML dan memunculkan grafik Test Result di dashboard
                     junit 'junit.xml'
                 }
             }
         }
-   
         stage('3. Build & Push Docker Image') {
             steps {
-                // Menggunakan nomor build Jenkins sebagai tag dinamis
                 script {
-                    def imageTag = "${env.BUILD_NUMBER}"
+                    def imageTag = "${env.BUILD_NUMBER}-${params.DEPLOY_ENV}"
+                    def targetEnv = "${params.DEPLOY_ENV}"
+                    echo "Membangun Docker Image untuk: ${targetEnv}"
                     sh "docker build -t ku12nia/nodejs:${imageTag} ."
-                    sh "docker tag ku12nia/nodejs:${imageTag} ku12nia/nodejs:latest"
-                    // Pastikan credential Docker sudah diset di Jenkins jika private.
-                //    withCredentials([usernamePassword(credentialsId: 'dockerhub-credentials', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-                //        def loginStatus = sh(script: "echo \$DOCKER_PASS | docker login -u \$DOCKER_USER --password-stdin", returnStatus: true)
-                //        if (loginStatus == 0) {
-                //            def pushStatusTag = sh(script: "docker push ku12nia/nodejs:${imageTag}", returnStatus: true)
-                //            def pushStatusLatest = sh(script: "docker push ku12nia/nodejs:latest", returnStatus: true)
-                //            
-                //            if (pushStatusTag == 0 && pushStatusLatest == 0) {
-                //                echo "🚀 Berhasil push update ke Docker Hub"
-                //            } else {
-                //                echo "⚠️ PERINGATAN: Gagal push image ke Docker Hub. Melanjutkan pipeline..."
-                //                unstable("Docker Push Failed")
-                //            }
-                //        } else {
-                //            echo "⚠️ PERINGATAN: Gagal login ke Docker Hub. Melewati tahap push..."
-                //            unstable("Docker Login Failed")
-                //        }
-                //    }
-                // Kalau public cukup langsung push:
-                    sh "docker push ku12nia/nodejs:${imageTag}"
-                    sh "docker push ku12nia/nodejs:latest"
-                    echo "🚀 Berhasil push update ke Docker Hub"
-                }
-            }
-        }
-        stage('4. Git Manifest Update via Trigged ArgoCD') {
-            steps {
-                script {
-                    def imageTag = "${env.BUILD_NUMBER}"
-                    echo "Mengupdate tag di app-deployment.yaml menjadi version: ${imageTag}"
-                    // Mengubah baris image di file app-deployment.yaml secara otomatis menggunakan sed
-                    sh """
-                        sed -i 's|image: ku12nia/nodejs:.*|image: ku12nia/nodejs:${imageTag}|g' k8s/app-deployment.yaml
-                    """
-                    // Konfigurasi git user untuk agent Jenkins
-                    sh 'git config --global user.email "jenkins@local.com"'
-                    sh 'git config --global user.name "Jenkins Automation"'
-                    // Cek apakah ada perubahan file sebelum melakukan commit & push
-                    def changes = sh(script: 'git status --porcelain', returnStdout: true).trim()
-                    if (changes) {
-                        sh 'git add k8s/app-deployment.yaml'
-                        sh 'git commit -m "ci(argocd): update image tag to ${imageTag}"'
-                        withCredentials([gitUsernamePassword(credentialsId: 'github-access-token')]) {
-                            sh 'git push origin HEAD:main'
+                    if (targetEnv == 'prod') {
+                        sh "docker tag ku12nia/nodejs:${imageTag} ku12nia/nodejs:latest"
+                    }
+                    withCredentials([usernamePassword(credentialsId: 'dockerhub-credentials', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                        def loginStatus = sh(script: "echo \$DOCKER_PASS | docker login -u \$DOCKER_USER --password-stdin", returnStatus: true)
+                        if (loginStatus == 0) {
+                            def pushStatusTag = sh(script: "docker push ku12nia/nodejs:${imageTag}", returnStatus: true)
+                            if (pushStatusTag == 0) {
+                                echo "🚀 Berhasil push image tag ${imageTag} ke Docker Hub"
+                                if (targetEnv == 'prod') {
+                                    sh "docker push ku12nia/nodejs:latest"
+                                }
+                            } else {
+                                echo "⚠️ PERINGATAN: Gagal push image ke Docker Hub."
+                                unstable("Docker Push Failed")
+                            }
+                        } else {
+                            echo "⚠️ PERINGATAN: Gagal login ke Docker Hub. Melewati tahap push..."
+                            unstable("Docker Login Failed")
                         }
-                        echo "🚀 Berhasil push update ke GitHub! Menjalankan sinkronisasi ke ArgoCD."
-                    } else {
-                        echo "⚠️ Tidak ada perubahan pada manifest, skip git commit & push, Auto sync ArgoCD."
                     }
                 }
             }
         }
-        stage('5. Ensure ArgoCD App Exists (Safe CLI)') {
+        
+        stage('4. Update Manifest & Push ke Git') {
+            steps {
+                script {
+                    def imageTag = "${env.BUILD_NUMBER}-${params.DEPLOY_ENV}"
+                    def targetEnv = "${params.DEPLOY_ENV}"
+                    echo "Mengupdate manifest Kubernetes di folder: k8s/${targetEnv}/"
+                    sh """
+                        sed -i 's|image: ku12nia/nodejs:.*|image: ku12nia/nodejs:${imageTag}|g' k8s/${targetEnv}/app-deployment.yaml
+                    """
+                    sh 'git config --global user.email "jenkins@local.com"'
+                    sh 'git config --global user.name "Jenkins Automation"'
+                    def changes = sh(script: 'git status --porcelain', returnStdout: true).trim()
+                    if (changes) {
+                        sh "git add k8s/${targetEnv}/app-deployment.yaml"
+                        sh "git commit -m 'ci(argocd): update ${targetEnv} image tag to ${imageTag}'"
+                        withCredentials([gitUsernamePassword(credentialsId: 'github-access-token')]) {
+                            def gitPushStatus = sh(script: 'git push origin HEAD:main', returnStatus: true)
+                            if (gitPushStatus == 0) {
+                                echo "🚀 Berhasil push update manifest ke GitHub!"
+                            } else {
+                                echo "⚠️ PERINGATAN: Gagal push ke GitHub."
+                                unstable("GitHub Push Failed")
+                            }
+                        }
+                    } else {
+                        echo "⚠️ Tidak ada perubahan pada manifest, skip git commit."
+                    }
+                }
+            }
+        }
+        stage('5. Trigger Sync ArgoCD') {
             steps {
                 script {
                     sh '''
@@ -102,21 +116,30 @@ pipeline {
                     if (hasArgocd) {
                         def argocdServer = "host.docker.internal:8081"
                         def argocdPass = "USrwCKyHLfSgZPGp"
-                        sh """
-                            # 1. Login dulu ke server ArgoCD
-                            ./argocd login ${argocdServer} --username admin --password ${argocdPass} --insecure
-                            # 2. Baru create aplikasinya
-                            ./argocd app create node-app \
-                            --repo https://github.com/ku12nia/npm.git \
-                            --path k8s \
-                            --dest-server https://kubernetes.default.svc \
-                            --dest-namespace apps \
-                            --sync-policy automated \
-                            --upsert
-                        """
-                        echo "✅ Berhasil sinkronisasi aplikasi ke ArgoCD."
+                        def targetEnv = "${params.DEPLOY_ENV}"
+                        def appName = "node-app-${targetEnv}" 
+                        def namespace = "${targetEnv}-apps" 
+                        def argoLoginStatus = sh(
+                            script: "./argocd login ${argocdServer} --username admin --password ${argocdPass} --insecure", 
+                            returnStatus: true
+                        )
+                        if (argoLoginStatus == 0) {
+                            sh """
+                                ./argocd app create ${appName} \
+                                --repo https://github.com/ku12nia/npm.git \
+                                --path k8s/${targetEnv} \
+                                --dest-server https://kubernetes.default.svc \
+                                --dest-namespace ${namespace} \
+                                --sync-policy automated \
+                                --upsert
+                            """
+                            echo "✅ Berhasil sinkronisasi aplikasi ${appName} ke ArgoCD di namespace ${namespace}."
+                        } else {
+                            echo "⚠️ PERINGATAN: Gagal terhubung ke server ArgoCD. Sinkronisasi CLI dilewati."
+                            unstable("ArgoCD Login Failed")
+                        }
                     } else {
-                        echo "⚠️ Perintah 'argocd' tidak ditemukan di agent ini. Melewatkan stage (Pipeline tetap sukses)."
+                        echo "⚠️ Perintah 'argocd' tidak ditemukan. Stage dilewati."
                     }
                 }
             }
