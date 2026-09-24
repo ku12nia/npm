@@ -38,7 +38,7 @@ pipeline {
             }
         }
         
-        stage('2. Persiapan Docker & Test App') {
+stage('2. Persiapan Docker & Test App') {
             steps {
                 script {
                     // 1. Cek dan Install Docker CLI
@@ -53,11 +53,21 @@ pipeline {
                         echo "✅ Docker CLI berhasil dipasang!"
                     }
 
-                    // 2. Dapetin ID Container Jenkins secara otomatis!
+                    // 2. Cek dan Install Docker Buildx (Biar build makin ngebut & warning hilang)
+                    def hasBuildx = sh(script: 'docker buildx version', returnStatus: true) == 0
+                    if (!hasBuildx) {
+                        echo "⚙️ Plugin Buildx belum ada. Mengunduh Buildx..."
+                        sh 'mkdir -p ~/.docker/cli-plugins'
+                        sh 'curl -sSL -o ~/.docker/cli-plugins/docker-buildx https://github.com/docker/buildx/releases/download/v0.14.0/buildx-v0.14.0.linux-amd64'
+                        sh 'chmod +x ~/.docker/cli-plugins/docker-buildx'
+                        echo "✅ Docker Buildx berhasil dipasang!"
+                    }
+
+                    // 3. Dapetin ID Container Jenkins secara otomatis!
                     def containerId = sh(script: 'hostname', returnStdout: true).trim()
                     echo "ℹ️ Jenkins berjalan di container ID: ${containerId}"
 
-                    // 3. Jalankan Unit Test (Gunakan containerId dinamis)
+                    // 4. Jalankan Unit Test (Gunakan containerId dinamis)
                     echo "🛠️ Menjalankan Unit Test via Docker..."
                     sh """
                     docker run --rm --volumes-from ${containerId} -w \${WORKSPACE} node:22-alpine sh -c "\
