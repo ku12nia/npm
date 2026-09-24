@@ -37,18 +37,19 @@ pipeline {
         
         stage('2. Test App') {
             // Gunakan agen Docker khusus image Node.js!
-            agent {
-                docker {
-                    image 'node:22-alpine'
-                    args '-u root'
-                }
-            }
             steps {
-                sh "sed -i '1s/^\\xEF\\xBB\\xBF//' package.json"
-                sh 'npm install'
-                sh 'npm install --save-dev jest jest-junit'
-                sh 'npx jest --ci --coverage --reporters=default --reporters=jest-junit'
-                echo "✅ Unit Test Berhasil."
+                script {
+                    echo "🛠️ Menjalankan Unit Test via Docker (Container sementara)"
+                    sh """
+                    docker run --rm -v \${WORKSPACE}:/app -w /app node:22-alpine sh -c "\
+                        sed -i '1s/^\\\\xEF\\\\xBB\\\\xBF//' package.json && \
+                        npm install && \
+                        npm install --save-dev jest jest-junit && \
+                        npx jest --ci --coverage --reporters=default --reporters=jest-junit \
+                    "
+                    """
+                    echo "✅ Unit Test Berhasil."
+                }
             }
             post {
                 always {
