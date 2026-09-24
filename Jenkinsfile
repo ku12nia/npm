@@ -17,16 +17,17 @@ pipeline {
         }
         stage('1. Checkout Code') {
             steps {
-                checkout([
-                    $class: 'GitSCM',
-                    branches: [[name: '*/main']],
-                    userRemoteConfigs: [[
-                        url: 'https://github.com/ku12nia/npm.git' 
-                        // Perlu define config jika repo private
-                    ]]
-                ])
-                echo "✅ Berhasil checkout dari GitHub yang didaftarkan."
-            }
+                script {
+                    def targetBranch = (params.DEPLOY_ENV == 'prod') ? 'main' : params.DEPLOY_ENV
+                    checkout([
+                        $class: 'GitSCM',
+                        branches: [[name: "*/${targetBranch}"]],
+                        userRemoteConfigs: [[
+                            url: 'https://github.com/ku12nia/npm.git' 
+                        ]]
+                    ])
+                    echo "✅ Berhasil checkout dari branch ${targetBranch}."
+                }
         }
         stage('2. Test App') {
             steps {
@@ -93,28 +94,31 @@ pipeline {
             steps {
                 script {
                     def imageTag = "${env.BUILD_NUMBER}-${params.DEPLOY_ENV}"
-                    def targetEnv = "${params.DEPLOY_ENV}"
-                    echo "Mengupdate manifest Kubernetes di folder: k8s/${targetEnv}/"
-                    sh """
-                        sed -i 's|image: ku12nia/nodejs:.*|image: ku12nia/nodejs:${imageTag}|g' k8s/${targetEnv}/app-deployment.yaml
-                    """
-                    sh 'git config --global user.email "jenkins@local.com"'
-                    sh 'git config --global user.name "Jenkins Automation"'
-                    def changes = sh(script: 'git status --porcelain', returnStdout: true).trim()
-                    if (changes) {
-                        sh "git add k8s/${targetEnv}/app-deployment.yaml"
-                        sh "git commit -m 'ci(argocd): update ${targetEnv} image tag to ${imageTag}'"
-                        withCredentials([gitUsernamePassword(credentialsId: 'github-access-token')]) {
-                            def gitPushStatus = sh(script: 'git push origin HEAD:main', returnStatus: true)
-                            if (gitPushStatus == 0) {
-                                echo "🚀 Berhasil push update manifest ke GitHub!"
-                            } else {
-                                echo "⚠️ PERINGATAN: Gagal push ke GitHub."
-                                unstable("GitHub Push Failed")
-                            }
+                    def targetBranch = (params.DEPLOY_ENV == 'prod') ? 'main' : params.DEPLOY_ENV
+                    def appName = "node-app-${params.DEPLOY_ENV}" 
+                    def namespace = "${params.DEPLOY_ENV}-apps" 
+                    def argoLoginStatus = sh(
+                            script: "./argocd login ${argocdServer} --username admin --password ${argocdPass} --insecure", 
+                            returnStatus: true
+                        )
+                        if (argoLoginStatus == 0) {
+                            sh """
+                                ./argocd app create ${appName} \
+                                --repo https://github.com/ku12nia/npm.git \
+                                --path k8s \
+                                --revision ${targetBranch} \
+                                --dest-server https://kubernetes.default.svc \
+                                --dest-namespace ${namespace} \
+                                --sync-policy automated \
+                                --upsert
+                            """
+                            echo "✅ Berhasil sinkronisasi aplikasi ${appName} ke ArgoCD memantau branch ${targetBranch}."
+                        } else {
+                            echo "⚠️ PERINGATAN: Gagal terhubung ke server ArgoCD. Sinkronisasi CLI dilewati."
+                            unstable("ArgoCD Login Failed")
                         }
                     } else {
-                        echo "⚠️ Tidak ada perubahan pada manifest, skip git commit."
+                        echo "⚠️ Perintah 'argocd' tidak ditemukan. Stage dilewati."
                     }
                 }
             }
