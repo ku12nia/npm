@@ -147,8 +147,8 @@ pipeline {
                     
                     echo "✨ Mengupdate manifest di branch: ${targetBranch}"
                     sh "sed -i 's|image: ku12nia/nodejs:.*|image: ku12nia/nodejs:${imageTag}|g' k8s/app-deployment.yaml"
-                    sh 'git config --global user.email "jenkins@local.com"'
-                    sh 'git config --global user.name "Jenkins Automation"'
+                    sh 'git config --global user.email "dedimk.devops@gmail.com"'
+                    sh 'git config --global user.name "Dedi Mohammad Kurnia"'
                     
                     def changes = sh(script: 'git status --porcelain', returnStdout: true).trim()
                     
