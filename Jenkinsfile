@@ -23,13 +23,16 @@ pipeline {
             steps {
                 script {
                     def targetBranch = (params.DEPLOY_ENV == 'prod') ? 'main' : params.DEPLOY_ENV
-                    checkout([
-                        $class: 'GitSCM',
-                        branches: [[name: "*/${targetBranch}"]],
-                        userRemoteConfigs: [[
-                            url: 'https://github.com/ku12nia/npm.git' 
-                        ]]
-                    ])
+                    retry(3) {
+                        checkout([
+                            $class: 'GitSCM',
+                            branches: [[name: "*/${targetBranch}"]],
+                            extensions: [[$class: 'CloneOption', timeout: 30, noTags: false, reference: '', shallow: false]],
+                            userRemoteConfigs: [[
+                                url: 'https://github.com/ku12nia/npm.git' 
+                            ]]
+                        ])
+                    }
                     echo "✅ Berhasil checkout dari branch ${targetBranch}."
                 }
             }
