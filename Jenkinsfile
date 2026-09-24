@@ -38,7 +38,7 @@ pipeline {
             }
         }
         
-stage('2. Persiapan Docker & Test App') {
+        stage('2. Persiapan Docker & Test App') {
             steps {
                 script {
                     // 1. Cek dan Install Docker CLI
@@ -95,41 +95,46 @@ stage('2. Persiapan Docker & Test App') {
                     def imageTag = "${env.BUILD_NUMBER}-${targetEnv}"
                     
                     echo "🏗️ Membangun Docker Image untuk: ${targetEnv}"
-                    sh "DOCKER_BUILDKIT=1 docker build -t ${imageRepo}:${imageTag} ."
+                    sh "DOCKER_BUILDKIT=1 docker build -t ${imageRepo}:${imageTag} ."            
                     if (targetEnv == 'prod') {
                         sh "docker tag ${imageRepo}:${imageTag} ${imageRepo}:latest"
                     }
                     
-                    echo "🔐 Melakukan otentikasi ke Docker Hub..."
-                    def loginStatus = sh(
-                        script: """
-                            set +x
-                            echo '${params.DOCKER_PASS}' | docker login -u '${params.DOCKER_USER}' --password-stdin
-                        """, 
-                        returnStatus: true
-                    )
-                    
-                    if (loginStatus != 0) {
-                        error("❌ Gagal login ke Docker Hub! Cek username dan password/token di parameter.")
-                    }
-                    echo "✅ Login berhasil!"
-                    
-                    echo "🚀 Mendorong Image ke Docker Hub..."
-                    def pushStatus = sh(script: "docker push ${imageRepo}:${imageTag}", returnStatus: true)
-                    
-                    if (pushStatus != 0) {
-                        error("❌ Gagal push image tag ${imageTag} ke Docker Hub! Pipeline dihentikan.")
-                    }
-                    echo "✅ Berhasil push ${imageRepo}:${imageTag}"
-                    
-                    if (targetEnv == 'prod') {
-                        def pushLatest = sh(script: "docker push ${imageRepo}:latest", returnStatus: true)
+                    // AUTO-LOGIN: Mengambil rahasia dari brankas Jenkins
+                    echo "🔐 Melakukan otentikasi otomatis ke Docker Hub..."
+                    withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', passwordVariable: 'DOCKER_PASS', usernameVariable: 'DOCKER_USER')]) {
+                        def loginStatus = sh(
+                            script: """
+                                set +x
+                                echo "\$DOCKER_PASS" | docker login -u "\$DOCKER_USER" --password-stdin
+                            """, 
+                            returnStatus: true
+                        )
                         
-                        if (pushLatest != 0) {
-                            error("❌ Gagal push image tag latest. Pipeline dihentikan.")
+                        // Guard Clause
+                        if (loginStatus != 0) {
+                            error("❌ Gagal login ke Docker Hub! Cek kredensial 'dockerhub-creds' di setting Jenkins.")
                         }
-                        echo "✅ Berhasil push ${imageRepo}:latest"
-                    }
+                        echo "✅ Login otomatis berhasil!"
+                        
+                        // Push Image
+                        echo "🚀 Mendorong Image ke Docker Hub..."
+                        def pushStatus = sh(script: "docker push ${imageRepo}:${imageTag}", returnStatus: true)
+                        
+                        if (pushStatus != 0) {
+                            error("❌ Gagal push image tag ${imageTag} ke Docker Hub! Pipeline dihentikan.")
+                        }
+                        echo "✅ Berhasil push ${imageRepo}:${imageTag}"
+                        
+                        // Push Image Latest (Khusus Prod)
+                        if (targetEnv == 'prod') {
+                            def pushLatest = sh(script: "docker push ${imageRepo}:latest", returnStatus: true)
+                            if (pushLatest != 0) {
+                                error("❌ Gagal push image tag latest. Pipeline dihentikan.")
+                            }
+                            echo "✅ Berhasil push ${imageRepo}:latest"
+                        }
+                    } // Penutup withCredentials
                 }
             }
         }
