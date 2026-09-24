@@ -57,8 +57,8 @@ pipeline {
                 script {
                     def targetEnv = params.DEPLOY_ENV
                     def imageTag = "${env.BUILD_NUMBER}-${targetEnv}"
-                    echo "Membangun Docker Image untuk: ${targetEnv}"
-                    sh "docker build -t ku12nia/nodejs:${imageTag} ."
+                    echo "🏗️ Membangun Docker Image untuk: ${targetEnv}"
+                    sh "sudo docker build -t ku12nia/nodejs:${imageTag} ."
                     
                     if (targetEnv == 'prod') {
                         sh "docker tag ku12nia/nodejs:${imageTag} ku12nia/nodejs:latest"
@@ -104,7 +104,7 @@ pipeline {
                     def imageTag = "${env.BUILD_NUMBER}-${params.DEPLOY_ENV}"
                     def targetBranch = (params.DEPLOY_ENV == 'prod') ? 'main' : params.DEPLOY_ENV
                     
-                    echo "Mengupdate manifest di branch: ${targetBranch}"
+                    echo "✨ Mengupdate manifest di branch: ${targetBranch}"
                     sh "sed -i 's|image: ku12nia/nodejs:.*|image: ku12nia/nodejs:${imageTag}|g' k8s/app-deployment.yaml"
                     sh 'git config --global user.email "jenkins@local.com"'
                     sh 'git config --global user.name "Jenkins Automation"'
@@ -146,7 +146,7 @@ pipeline {
                         def argoLoginStatus = sh(script: "./argocd login ${argocdServer} --username admin --password ${argocdPass} --insecure", returnStatus: true)
                         if (argoLoginStatus == 0) {
                             sh "./argocd app create ${appName} --repo https://github.com/ku12nia/npm.git --path k8s --revision ${targetBranch} --dest-server https://kubernetes.default.svc --dest-namespace ${namespace} --sync-policy automated --upsert"
-                            echo "✅ Berhasil sinkronisasi aplikasi ${appName} ke ArgoCD memantau branch ${targetBranch}."
+                            echo "🔄 Berhasil sinkronisasi aplikasi ${appName} ke ArgoCD memantau branch ${targetBranch}."
                         } else {
                             echo "⚠️ PERINGATAN: Gagal terhubung ke server ArgoCD. Sinkronisasi CLI dilewati."
                             unstable("ArgoCD Login Failed")
