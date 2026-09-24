@@ -102,11 +102,9 @@ pipeline {
                     sh 'git config --global user.name "Jenkins Automation"'
                     
                     def changes = sh(script: 'git status --porcelain', returnStdout: true).trim()
-                    
                     if (changes != "") {
                         sh "git add k8s/app-deployment.yaml"
                         sh "git commit -m 'ci(argocd): update image tag to ${imageTag}'"
-                        
                         // Kembali menggunakan gitUsernamePassword agar push otomatis dikenali oleh origin
                         withCredentials([gitUsernamePassword(credentialsId: 'github-access-token')]) {
                             def gitPushStatus = sh(script: "git push origin HEAD:${targetBranch}", returnStatus: true)
@@ -165,4 +163,5 @@ pipeline {
         }
 // -- stage selanjutnya
     }
+}
 }
