@@ -35,10 +35,23 @@ pipeline {
             }
         }
         
-        stage('2. Test App') {
-            // Gunakan agen Docker khusus image Node.js!
+        stage('2. Persiapan Docker & Test App') {
             steps {
                 script {
+                    def hasDocker = sh(script: 'command -v docker', returnStatus: true) == 0
+                    if (!hasDocker) {
+                        echo "⚙️ Docker belum ada. Mengunduh Docker CLI..."
+                        sh 'curl -sSL -o docker.tgz https://download.docker.com/linux/static/stable/x86_64/docker-24.0.9.tgz'
+                        sh 'tar -xzf docker.tgz'
+                        sh 'mv docker/docker /usr/bin/docker'
+                        sh 'chmod +x /usr/bin/docker'
+                        sh 'rm -rf docker docker.tgz'
+                        echo "✅ Docker CLI berhasil dipasang!"
+                    } else {
+                        echo "✅ Docker CLI sudah tersedia."
+                    }
+
+                    // 2. Jalankan Unit Test
                     echo "🛠️ Menjalankan Unit Test via Docker (Container sementara)"
                     sh """
                     docker run --rm -v \${WORKSPACE}:/app -w /app node:22-alpine sh -c "\
