@@ -2,6 +2,7 @@ pipeline {
     agent any
     parameters {
         choice(name: 'DEPLOY_ENV', choices: ['dev', 'staging', 'prod'], description: 'Pilih target environment untuk deployment')
+        booleanParam(name: 'IS_PRIVATE_REPO', defaultValue: false, description: 'Centang jika Docker Hub repository bersifat Private')
     }
     options {
         buildDiscarder(logRotator(numToKeepStr: '10'))
@@ -48,33 +49,46 @@ pipeline {
                 script {
                     def imageTag = "${env.BUILD_NUMBER}-${params.DEPLOY_ENV}"
                     def targetEnv = "${params.DEPLOY_ENV}"
+                    
                     echo "Membangun Docker Image untuk: ${targetEnv}"
                     sh "docker build -t ku12nia/nodejs:${imageTag} ."
+                    
                     if (targetEnv == 'prod') {
                         sh "docker tag ku12nia/nodejs:${imageTag} ku12nia/nodejs:latest"
                     }
-                    withCredentials([usernamePassword(credentialsId: 'dockerhub-credentials', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-                        def loginStatus = sh(script: "echo \$DOCKER_PASS | docker login -u \$DOCKER_USER --password-stdin", returnStatus: true)
-                        if (loginStatus == 0) {
-                            def pushStatusTag = sh(script: "docker push ku12nia/nodejs:${imageTag}", returnStatus: true)
-                            if (pushStatusTag == 0) {
-                                echo "🚀 Berhasil push image tag ${imageTag} ke Docker Hub"
-                                if (targetEnv == 'prod') {
-                                    sh "docker push ku12nia/nodejs:latest"
+                    def loginSuccess = true 
+                    if (params.IS_PRIVATE_REPO) {
+                        echo "🔒 Repo diatur sebagai Private. Memulai proses autentikasi Docker Hub..."
+                        withCredentials([usernamePassword(credentialsId: 'dockerhub-credentials', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                            def loginStatus = sh(script: "echo \$DOCKER_PASS | docker login -u \$DOCKER_USER --password-stdin", returnStatus: true)
+                            if (loginStatus != 0) {
+                                loginSuccess = false // Gagalkan flag jika login error
+                                echo "⚠️ PERINGATAN: Gagal login ke Docker Hub. Melewati tahap push..."
+                                unstable("Docker Login Failed")
+                            }
+                        }
+                    } else {
+                        echo "🌍 Repo diatur sebagai Public. Melompati tahap login Docker Hub..."
+                    }
+                    if (loginSuccess) {
+                        def pushStatusTag = sh(script: "docker push ku12nia/nodejs:${imageTag}", returnStatus: true)
+                        if (pushStatusTag == 0) {
+                            echo "🚀 Berhasil push image tag ${imageTag} ke Docker Hub"
+                            if (targetEnv == 'prod') {
+                                def pushLatest = sh(script: "docker push ku12nia/nodejs:latest", returnStatus: true)
+                                if (pushLatest != 0) {
+                                    echo "⚠️ PERINGATAN: Gagal push image tag latest."
+                                    unstable("Docker Push Latest Failed")
                                 }
-                            } else {
-                                echo "⚠️ PERINGATAN: Gagal push image ke Docker Hub."
-                                unstable("Docker Push Failed")
                             }
                         } else {
-                            echo "⚠️ PERINGATAN: Gagal login ke Docker Hub. Melewati tahap push..."
-                            unstable("Docker Login Failed")
+                            echo "⚠️ PERINGATAN: Gagal push image ke Docker Hub. Cek koneksi atau status Repo."
+                            unstable("Docker Push Failed")
                         }
                     }
                 }
             }
         }
-        
         stage('4. Update Manifest & Push ke Git') {
             steps {
                 script {
