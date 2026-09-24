@@ -83,8 +83,9 @@ pipeline {
                     def targetEnv = params.DEPLOY_ENV
                     def imageRepo = "ku12nia/nodejs" 
                     def imageTag = "${env.BUILD_NUMBER}-${targetEnv}"
+                    
                     echo "🏗️ Membangun Docker Image untuk: ${targetEnv}"
-                    sh "docker build -t ${imageRepo}:${imageTag} ."
+                    sh "DOCKER_BUILDKIT=1 docker build -t ${imageRepo}:${imageTag} ."
                     if (targetEnv == 'prod') {
                         sh "docker tag ${imageRepo}:${imageTag} ${imageRepo}:latest"
                     }
@@ -99,30 +100,25 @@ pipeline {
                     )
                     
                     if (loginStatus != 0) {
-                        echo "⚠️ PERINGATAN: Gagal login ke Docker Hub. Melewati tahap push..."
-                        unstable("Docker Login Failed")
-                        return
+                        error("❌ Gagal login ke Docker Hub! Cek username dan password/token di parameter.")
                     }
+                    echo "✅ Login berhasil!"
                     
                     echo "🚀 Mendorong Image ke Docker Hub..."
                     def pushStatus = sh(script: "docker push ${imageRepo}:${imageTag}", returnStatus: true)
                     
-                    if (pushStatus == 0) {
-                        echo "✅ Berhasil push ${imageRepo}:${imageTag}"
+                    if (pushStatus != 0) {
+                        error("❌ Gagal push image tag ${imageTag} ke Docker Hub! Pipeline dihentikan.")
+                    }
+                    echo "✅ Berhasil push ${imageRepo}:${imageTag}"
+                    
+                    if (targetEnv == 'prod') {
+                        def pushLatest = sh(script: "docker push ${imageRepo}:latest", returnStatus: true)
                         
-                        // Push tag latest khusus environment production
-                        if (targetEnv == 'prod') {
-                            def pushLatest = sh(script: "docker push ${imageRepo}:latest", returnStatus: true)
-                            if (pushLatest != 0) {
-                                echo "⚠️ PERINGATAN: Gagal push image tag latest."
-                                unstable("Docker Push Latest Failed")
-                            } else {
-                                echo "✅ Berhasil push ${imageRepo}:latest"
-                            }
+                        if (pushLatest != 0) {
+                            error("❌ Gagal push image tag latest. Pipeline dihentikan.")
                         }
-                    } else {
-                        echo "⚠️ PERINGATAN: Gagal push image tag ${imageTag} ke Docker Hub."
-                        unstable("Docker Push Failed")
+                        echo "✅ Berhasil push ${imageRepo}:latest"
                     }
                 }
             }
