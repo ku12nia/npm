@@ -39,7 +39,25 @@ pipeline {
                     def imageTag = "${env.BUILD_NUMBER}"
                     sh "docker build -t ku12nia/nodejs:${imageTag} ."
                     sh "docker tag ku12nia/nodejs:${imageTag} ku12nia/nodejs:latest"
-                    // Pastikan credential Docker sudah diset di Jenkins jika private, kalau public cukup langsung push:
+                    // Pastikan credential Docker sudah diset di Jenkins jika private.
+                //    withCredentials([usernamePassword(credentialsId: 'dockerhub-credentials', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                //        def loginStatus = sh(script: "echo \$DOCKER_PASS | docker login -u \$DOCKER_USER --password-stdin", returnStatus: true)
+                //        if (loginStatus == 0) {
+                //            def pushStatusTag = sh(script: "docker push ku12nia/nodejs:${imageTag}", returnStatus: true)
+                //            def pushStatusLatest = sh(script: "docker push ku12nia/nodejs:latest", returnStatus: true)
+                //            
+                //            if (pushStatusTag == 0 && pushStatusLatest == 0) {
+                //                echo "🚀 Berhasil push update ke Docker Hub"
+                //            } else {
+                //                echo "⚠️ PERINGATAN: Gagal push image ke Docker Hub. Melanjutkan pipeline..."
+                //                unstable("Docker Push Failed")
+                //            }
+                //        } else {
+                //            echo "⚠️ PERINGATAN: Gagal login ke Docker Hub. Melewati tahap push..."
+                //            unstable("Docker Login Failed")
+                //        }
+                //    }
+                // Kalau public cukup langsung push:
                     sh "docker push ku12nia/nodejs:${imageTag}"
                     sh "docker push ku12nia/nodejs:latest"
                     echo "🚀 Berhasil push update ke Docker Hub"
