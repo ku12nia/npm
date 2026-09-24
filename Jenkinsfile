@@ -36,14 +36,19 @@ pipeline {
         }
         
         stage('2. Test App') {
-            steps {
-                nodejs('NodeJS LTS') {
-                    sh "sed -i '1s/^\\xEF\\xBB\\xBF//' package.json"
-                    sh 'npm install'
-                    sh 'npm install --save-dev jest jest-junit'
-                    sh 'npx jest --ci --coverage --reporters=default --reporters=jest-junit'
-                    echo "✅ Unit Test Berhasil."
+            // Gunakan agen Docker khusus image Node.js!
+            agent {
+                docker {
+                    image 'node:22-alpine'
+                    args '-u root'
                 }
+            }
+            steps {
+                sh "sed -i '1s/^\\xEF\\xBB\\xBF//' package.json"
+                sh 'npm install'
+                sh 'npm install --save-dev jest jest-junit'
+                sh 'npx jest --ci --coverage --reporters=default --reporters=jest-junit'
+                echo "✅ Unit Test Berhasil."
             }
             post {
                 always {
