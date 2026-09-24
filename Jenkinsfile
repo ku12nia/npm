@@ -68,6 +68,7 @@ pipeline {
             post {
                 always {
                     junit 'junit.xml'
+                    sh 'rm -rf node_modules coverage junit.xml'
                 }
             }
         }
