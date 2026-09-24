@@ -72,7 +72,6 @@ pipeline {
             }
             post {
                 success {
-                    // Hanya rekam test kalau tahap script di atas sukses
                     junit 'junit.xml'
                 }
             }
@@ -81,30 +80,49 @@ pipeline {
         stage('3. Build & Push Docker Image') {
             steps {
                 script {
-                    def imageTag = "${env.BUILD_NUMBER}-${params.DEPLOY_ENV}"
-                    echo "🏗️ Membangun Docker Image untuk: ${params.DEPLOY_ENV}"
+                    def targetEnv = params.DEPLOY_ENV
+                    def imageRepo = "ku12nia/nodejs" 
+                    def imageTag = "${env.BUILD_NUMBER}-${targetEnv}"
+                    echo "🏗️ Membangun Docker Image untuk: ${targetEnv}"
+                    sh "docker build -t ${imageRepo}:${imageTag} ."
+                    if (targetEnv == 'prod') {
+                        sh "docker tag ${imageRepo}:${imageTag} ${imageRepo}:latest"
+                    }
                     
-                    // 1. Build & Tag Image
-                    sh "docker build -t ku12nia/nodejs:${imageTag} ."
-                    sh "docker tag ku12nia/nodejs:${imageTag} ku12nia/nodejs:latest"
+                    echo "🔐 Melakukan otentikasi ke Docker Hub..."
+                    def loginStatus = sh(
+                        script: """
+                            set +x
+                            echo '${params.DOCKER_PASS}' | docker login -u '${params.DOCKER_USER}' --password-stdin
+                        """, 
+                        returnStatus: true
+                    )
                     
-                    // 2. Percabangan Login (Selalu login sebelum push)
-                    // Ganti 'dockerhub-creds' dengan ID Credentials lu di Jenkins
-                    withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', passwordVariable: 'DOCKER_PASS', usernameVariable: 'DOCKER_USER')]) {
+                    if (loginStatus != 0) {
+                        echo "⚠️ PERINGATAN: Gagal login ke Docker Hub. Melewati tahap push..."
+                        unstable("Docker Login Failed")
+                        return
+                    }
+                    
+                    echo "🚀 Mendorong Image ke Docker Hub..."
+                    def pushStatus = sh(script: "docker push ${imageRepo}:${imageTag}", returnStatus: true)
+                    
+                    if (pushStatus == 0) {
+                        echo "✅ Berhasil push ${imageRepo}:${imageTag}"
                         
-                        echo "🔐 Melakukan otentikasi ke Docker Hub..."
-                        sh "echo \$DOCKER_PASS | docker login -u \$DOCKER_USER --password-stdin"
-                        
-                        if (params.IS_PRIVATE_REPO) {
-                            echo "ℹ️ Repo tujuan adalah Private. Memastikan kredensial aman..."
-                        } else {
-                            echo "ℹ️ Repo tujuan adalah Public. Otentikasi tetap diperlukan untuk proses Push (Upload)."
+                        // Push tag latest khusus environment production
+                        if (targetEnv == 'prod') {
+                            def pushLatest = sh(script: "docker push ${imageRepo}:latest", returnStatus: true)
+                            if (pushLatest != 0) {
+                                echo "⚠️ PERINGATAN: Gagal push image tag latest."
+                                unstable("Docker Push Latest Failed")
+                            } else {
+                                echo "✅ Berhasil push ${imageRepo}:latest"
+                            }
                         }
-                        
-                        // 3. Push Image ke Docker Hub
-                        echo "🚀 Mendorong Image ke Docker Hub..."
-                        sh "docker push ku12nia/nodejs:${imageTag}"
-                        sh "docker push ku12nia/nodejs:latest"
+                    } else {
+                        echo "⚠️ PERINGATAN: Gagal push image tag ${imageTag} ke Docker Hub."
+                        unstable("Docker Push Failed")
                     }
                 }
             }
