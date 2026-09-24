@@ -1,12 +1,15 @@
 pipeline {
     agent any
+    
     parameters {
         choice(name: 'DEPLOY_ENV', choices: ['dev', 'staging', 'prod'], description: 'Pilih target environment untuk deployment')
         booleanParam(name: 'IS_PRIVATE_REPO', defaultValue: false, description: 'Centang jika Docker Hub repository bersifat Private')
     }
+    
     options {
         buildDiscarder(logRotator(numToKeepStr: '10'))
     }
+    
     stages {
         stage('0. Setup Build Name') {
             steps {
@@ -15,6 +18,7 @@ pipeline {
                 }
             }
         }
+        
         stage('1. Checkout Code') {
             steps {
                 script {
@@ -28,7 +32,9 @@ pipeline {
                     ])
                     echo "✅ Berhasil checkout dari branch ${targetBranch}."
                 }
+            }
         }
+        
         stage('2. Test App') {
             steps {
                 nodejs('NodeJS LTS') {
@@ -45,12 +51,12 @@ pipeline {
                 }
             }
         }
+        
         stage('3. Build & Push Docker Image') {
             steps {
                 script {
-                    def imageTag = "${env.BUILD_NUMBER}-${params.DEPLOY_ENV}"
-                    def targetEnv = "${params.DEPLOY_ENV}"
-                    
+                    def targetEnv = params.DEPLOY_ENV
+                    def imageTag = "${env.BUILD_NUMBER}-${targetEnv}"
                     echo "Membangun Docker Image untuk: ${targetEnv}"
                     sh "docker build -t ku12nia/nodejs:${imageTag} ."
                     
@@ -63,7 +69,7 @@ pipeline {
                         withCredentials([usernamePassword(credentialsId: 'dockerhub-credentials', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
                             def loginStatus = sh(script: "echo \$DOCKER_PASS | docker login -u \$DOCKER_USER --password-stdin", returnStatus: true)
                             if (loginStatus != 0) {
-                                loginSuccess = false // Gagalkan flag jika login error
+                                loginSuccess = false 
                                 echo "⚠️ PERINGATAN: Gagal login ke Docker Hub. Melewati tahap push..."
                                 unstable("Docker Login Failed")
                             }
@@ -71,6 +77,7 @@ pipeline {
                     } else {
                         echo "🌍 Repo diatur sebagai Public. Melompati tahap login Docker Hub..."
                     }
+
                     if (loginSuccess) {
                         def pushStatusTag = sh(script: "docker push ku12nia/nodejs:${imageTag}", returnStatus: true)
                         if (pushStatusTag == 0) {
@@ -83,13 +90,14 @@ pipeline {
                                 }
                             }
                         } else {
-                            echo "⚠️ PERINGATAN: Gagal push image ke Docker Hub. Cek koneksi atau status Repo."
+                            echo "⚠️ PERINGATAN: Gagal push image ke Docker Hub."
                             unstable("Docker Push Failed")
                         }
                     }
                 }
             }
         }
+        
         stage('4. Update Manifest & Push ke Git') {
             steps {
                 script {
@@ -102,13 +110,13 @@ pipeline {
                     sh 'git config --global user.name "Jenkins Automation"'
                     
                     def changes = sh(script: 'git status --porcelain', returnStdout: true).trim()
+                    
                     if (changes != "") {
                         sh "git add k8s/app-deployment.yaml"
                         sh "git commit -m 'ci(argocd): update image tag to ${imageTag}'"
-                        // Kembali menggunakan gitUsernamePassword agar push otomatis dikenali oleh origin
+                        
                         withCredentials([gitUsernamePassword(credentialsId: 'github-access-token')]) {
                             def gitPushStatus = sh(script: "git push origin HEAD:${targetBranch}", returnStatus: true)
-                            
                             if (gitPushStatus == 0) {
                                 echo "🚀 Berhasil push update manifest ke GitHub branch ${targetBranch}!"
                             } else {
@@ -122,35 +130,23 @@ pipeline {
                 }
             }
         }
+        
         stage('5. Trigger Sync ArgoCD') {
             steps {
                 script {
-                    sh '''
-                        curl -sSL -o argocd https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
-                        chmod +x argocd
-                    '''
+                    sh 'curl -sSL -o argocd https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64 && chmod +x argocd'
+                    
                     def hasArgocd = sh(script: 'test -x ./argocd', returnStatus: true) == 0
                     if (hasArgocd) {
                         def argocdServer = "host.docker.internal:8081"
                         def argocdPass = "USrwCKyHLfSgZPGp"
-                        def targetEnv = "${params.DEPLOY_ENV}"
-                        def appName = "node-app-${targetEnv}" 
-                        def namespace = "${targetEnv}-apps" 
-                        def argoLoginStatus = sh(
-                            script: "./argocd login ${argocdServer} --username admin --password ${argocdPass} --insecure", 
-                            returnStatus: true
-                        )
+                        def targetBranch = (params.DEPLOY_ENV == 'prod') ? 'main' : params.DEPLOY_ENV
+                        def appName = "node-app-${params.DEPLOY_ENV}" 
+                        def namespace = "${params.DEPLOY_ENV}-apps" 
+                        def argoLoginStatus = sh(script: "./argocd login ${argocdServer} --username admin --password ${argocdPass} --insecure", returnStatus: true)
                         if (argoLoginStatus == 0) {
-                            sh """
-                                ./argocd app create ${appName} \
-                                --repo https://github.com/ku12nia/npm.git \
-                                --path k8s/${targetEnv} \
-                                --dest-server https://kubernetes.default.svc \
-                                --dest-namespace ${namespace} \
-                                --sync-policy automated \
-                                --upsert
-                            """
-                            echo "✅ Berhasil sinkronisasi aplikasi ${appName} ke ArgoCD di namespace ${namespace}."
+                            sh "./argocd app create ${appName} --repo https://github.com/ku12nia/npm.git --path k8s --revision ${targetBranch} --dest-server https://kubernetes.default.svc --dest-namespace ${namespace} --sync-policy automated --upsert"
+                            echo "✅ Berhasil sinkronisasi aplikasi ${appName} ke ArgoCD memantau branch ${targetBranch}."
                         } else {
                             echo "⚠️ PERINGATAN: Gagal terhubung ke server ArgoCD. Sinkronisasi CLI dilewati."
                             unstable("ArgoCD Login Failed")
@@ -161,7 +157,6 @@ pipeline {
                 }
             }
         }
-// -- stage selanjutnya
+        
     }
-}
 }
