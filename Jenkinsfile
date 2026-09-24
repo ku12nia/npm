@@ -95,30 +95,31 @@ pipeline {
                 script {
                     def imageTag = "${env.BUILD_NUMBER}-${params.DEPLOY_ENV}"
                     def targetBranch = (params.DEPLOY_ENV == 'prod') ? 'main' : params.DEPLOY_ENV
-                    def appName = "node-app-${params.DEPLOY_ENV}" 
-                    def namespace = "${params.DEPLOY_ENV}-apps" 
-                    def argoLoginStatus = sh(
-                            script: "./argocd login ${argocdServer} --username admin --password ${argocdPass} --insecure", 
-                            returnStatus: true
-                        )
-                        if (argoLoginStatus == 0) {
-                            sh """
-                                ./argocd app create ${appName} \
-                                --repo https://github.com/ku12nia/npm.git \
-                                --path k8s \
-                                --revision ${targetBranch} \
-                                --dest-server https://kubernetes.default.svc \
-                                --dest-namespace ${namespace} \
-                                --sync-policy automated \
-                                --upsert
-                            """
-                            echo "✅ Berhasil sinkronisasi aplikasi ${appName} ke ArgoCD memantau branch ${targetBranch}."
-                        } else {
-                            echo "⚠️ PERINGATAN: Gagal terhubung ke server ArgoCD. Sinkronisasi CLI dilewati."
-                            unstable("ArgoCD Login Failed")
+                    
+                    echo "Mengupdate manifest di branch: ${targetBranch}"
+                    sh "sed -i 's|image: ku12nia/nodejs:.*|image: ku12nia/nodejs:${imageTag}|g' k8s/app-deployment.yaml"
+                    sh 'git config --global user.email "jenkins@local.com"'
+                    sh 'git config --global user.name "Jenkins Automation"'
+                    
+                    def changes = sh(script: 'git status --porcelain', returnStdout: true).trim()
+                    
+                    if (changes != "") {
+                        sh "git add k8s/app-deployment.yaml"
+                        sh "git commit -m 'ci(argocd): update image tag to ${imageTag}'"
+                        
+                        // Kembali menggunakan gitUsernamePassword agar push otomatis dikenali oleh origin
+                        withCredentials([gitUsernamePassword(credentialsId: 'github-access-token')]) {
+                            def gitPushStatus = sh(script: "git push origin HEAD:${targetBranch}", returnStatus: true)
+                            
+                            if (gitPushStatus == 0) {
+                                echo "🚀 Berhasil push update manifest ke GitHub branch ${targetBranch}!"
+                            } else {
+                                echo "⚠️ PERINGATAN: Gagal push ke GitHub."
+                                unstable("GitHub Push Failed")
+                            }
                         }
                     } else {
-                        echo "⚠️ Perintah 'argocd' tidak ditemukan. Stage dilewati."
+                        echo "⚠️ Tidak ada perubahan pada manifest, skip git commit."
                     }
                 }
             }
