@@ -77,48 +77,34 @@ pipeline {
                 }
             }
         }
-        
+
         stage('3. Build & Push Docker Image') {
             steps {
                 script {
-                    def targetEnv = params.DEPLOY_ENV
-                    def imageTag = "${env.BUILD_NUMBER}-${targetEnv}"
-                    echo "🏗️ Membangun Docker Image untuk: ${targetEnv}"
-                    sh "docker build -t ku12nia/nodejs:${imageTag} ."
+                    def imageTag = "${env.BUILD_NUMBER}-${params.DEPLOY_ENV}"
+                    echo "🏗️ Membangun Docker Image untuk: ${params.DEPLOY_ENV}"
                     
-                    if (targetEnv == 'prod') {
-                        sh "docker tag ku12nia/nodejs:${imageTag} ku12nia/nodejs:latest"
-                    }
-                    def loginSuccess = true 
-                    if (params.IS_PRIVATE_REPO) {
-                        echo "🔒 Repo diatur sebagai Private. Memulai proses autentikasi Docker Hub..."
-                        withCredentials([usernamePassword(credentialsId: 'dockerhub-credentials', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-                            def loginStatus = sh(script: "echo \$DOCKER_PASS | docker login -u \$DOCKER_USER --password-stdin", returnStatus: true)
-                            if (loginStatus != 0) {
-                                loginSuccess = false 
-                                echo "⚠️ PERINGATAN: Gagal login ke Docker Hub. Melewati tahap push..."
-                                unstable("Docker Login Failed")
-                            }
-                        }
-                    } else {
-                        echo "🌍 Repo diatur sebagai Public. Melompati tahap login Docker Hub..."
-                    }
-
-                    if (loginSuccess) {
-                        def pushStatusTag = sh(script: "docker push ku12nia/nodejs:${imageTag}", returnStatus: true)
-                        if (pushStatusTag == 0) {
-                            echo "🚀 Berhasil push image tag ${imageTag} ke Docker Hub"
-                            if (targetEnv == 'prod') {
-                                def pushLatest = sh(script: "docker push ku12nia/nodejs:latest", returnStatus: true)
-                                if (pushLatest != 0) {
-                                    echo "⚠️ PERINGATAN: Gagal push image tag latest."
-                                    unstable("Docker Push Latest Failed")
-                                }
-                            }
+                    // 1. Build & Tag Image
+                    sh "docker build -t ku12nia/nodejs:${imageTag} ."
+                    sh "docker tag ku12nia/nodejs:${imageTag} ku12nia/nodejs:latest"
+                    
+                    // 2. Percabangan Login (Selalu login sebelum push)
+                    // Ganti 'dockerhub-creds' dengan ID Credentials lu di Jenkins
+                    withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', passwordVariable: 'DOCKER_PASS', usernameVariable: 'DOCKER_USER')]) {
+                        
+                        echo "🔐 Melakukan otentikasi ke Docker Hub..."
+                        sh "echo \$DOCKER_PASS | docker login -u \$DOCKER_USER --password-stdin"
+                        
+                        if (params.IS_PRIVATE_REPO) {
+                            echo "ℹ️ Repo tujuan adalah Private. Memastikan kredensial aman..."
                         } else {
-                            echo "⚠️ PERINGATAN: Gagal push image ke Docker Hub."
-                            unstable("Docker Push Failed")
+                            echo "ℹ️ Repo tujuan adalah Public. Otentikasi tetap diperlukan untuk proses Push (Upload)."
                         }
+                        
+                        // 3. Push Image ke Docker Hub
+                        echo "🚀 Mendorong Image ke Docker Hub..."
+                        sh "docker push ku12nia/nodejs:${imageTag}"
+                        sh "docker push ku12nia/nodejs:latest"
                     }
                 }
             }
