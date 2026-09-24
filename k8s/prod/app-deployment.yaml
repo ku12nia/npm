@@ -1,20 +1,20 @@
 ﻿apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: node-app
+  name: prod-app
   namespace: apps
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: node-app
+      app: prod-app
   template:
     metadata:
       labels:
-        app: node-app
+        app: prod-app
     spec:
       containers:
-      - name: node-app
+      - name: prod-app
         image: ku12nia/nodejs:19
         imagePullPolicy: Always
         ports:
@@ -23,12 +23,12 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: node-app-service
+  name: prod-app-service
   namespace: apps
 spec:
   type: NodePort
   selector:
-    app: node-app
+    app: prod-app
   ports:
     - port: 80
       targetPort: 3000
