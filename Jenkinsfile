@@ -58,7 +58,7 @@ pipeline {
                     def targetEnv = params.DEPLOY_ENV
                     def imageTag = "${env.BUILD_NUMBER}-${targetEnv}"
                     echo "🏗️ Membangun Docker Image untuk: ${targetEnv}"
-                    sh "sudo docker build -t ku12nia/nodejs:${imageTag} ."
+                    sh "docker build -t ku12nia/nodejs:${imageTag} ."
                     
                     if (targetEnv == 'prod') {
                         sh "docker tag ku12nia/nodejs:${imageTag} ku12nia/nodejs:latest"
