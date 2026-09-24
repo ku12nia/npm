@@ -183,8 +183,8 @@ pipeline {
                 }
             }
         }
-
-        
+// Stage Selanjutnya
+    }    
     post {
         always {
             script {
@@ -194,6 +194,5 @@ pipeline {
                 echo "✨ Workspace sudah kinclong kembali!"
             }
         }
-      }
     }
 }
