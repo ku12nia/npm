@@ -41,6 +41,7 @@ pipeline {
         stage('2. Persiapan Docker & Test App') {
             steps {
                 script {
+                    // 1. Cek dan Install Docker CLI
                     def hasDocker = sh(script: 'command -v docker', returnStatus: true) == 0
                     if (!hasDocker) {
                         echo "⚙️ Docker belum ada. Mengunduh Docker CLI..."
@@ -50,12 +51,16 @@ pipeline {
                         sh 'chmod +x /usr/bin/docker'
                         sh 'rm -rf docker docker.tgz'
                         echo "✅ Docker CLI berhasil dipasang!"
-                    } else {
-                        echo "✅ Docker CLI sudah tersedia."
                     }
-                    echo "🛠️ Menjalankan Unit Test via Docker"
+
+                    // 2. Dapetin ID Container Jenkins secara otomatis!
+                    def containerId = sh(script: 'hostname', returnStdout: true).trim()
+                    echo "ℹ️ Jenkins berjalan di container ID: ${containerId}"
+
+                    // 3. Jalankan Unit Test (Gunakan containerId dinamis)
+                    echo "🛠️ Menjalankan Unit Test via Docker..."
                     sh """
-                    docker run --rm --volumes-from jenkins-9090 -w \${WORKSPACE} node:22-alpine sh -c "\
+                    docker run --rm --volumes-from ${containerId} -w \${WORKSPACE} node:22-alpine sh -c "\
                         sed -i '1s/^\\\\xEF\\\\xBB\\\\xBF//' package.json && \
                         npm install && \
                         npm install --save-dev jest jest-junit && \
@@ -66,9 +71,9 @@ pipeline {
                 }
             }
             post {
-                always {
+                success {
+                    // Hanya rekam test kalau tahap script di atas sukses
                     junit 'junit.xml'
-                    sh 'rm -rf node_modules coverage junit.xml'
                 }
             }
         }
@@ -178,6 +183,17 @@ pipeline {
                 }
             }
         }
+
         
+    post {
+        always {
+            script {
+                echo "🧹 Bersih-bersih workspace biar server gak engap..."
+                // Hapus folder node_modules dan file temporary
+                sh 'rm -rf node_modules coverage junit.xml docker.tgz docker'
+                echo "✨ Workspace sudah kinclong kembali!"
+            }
+        }
+      }
     }
 }
