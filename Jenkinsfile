@@ -52,6 +52,7 @@ pipeline {
                     }
                     echo "🛠️ Menjalankan Unit Test via Docker"
                     sh """
+                    docker run --rm --volumes-from jenkins-9090 -w \${WORKSPACE} node:22-alpine sh -c "\
                         sed -i '1s/^\\\\xEF\\\\xBB\\\\xBF//' package.json && \
                         npm install && \
                         npm install --save-dev jest jest-junit && \
