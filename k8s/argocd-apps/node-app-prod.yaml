@@ -1,17 +1,19 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: node-app
+  name: node-app-prod
   namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
 spec:
   project: default
   source:
     repoURL: 'https://github.com/ku12nia/npm.git'
     targetRevision: main
-    path: k8s
+    path: k8s/
   destination:
     server: 'https://kubernetes.default.svc'
-    namespace: apps
+    namespace: prod-apps
   syncPolicy:
     automated:
       prune: true
