@@ -9,7 +9,7 @@
 
 Repositori ini adalah sebuah ekosistem **Full-Stack Local DevOps & GitOps** yang siap pakai. Kita memadukan **CI/CD Pipeline modern** menggunakan Jenkins, manajemen database lokal (Postgres + pgAdmin), dan *Automated Deployment* ke Kubernetes menggunakan **ArgoCD (Pola App of Apps)**.
 
-Semuanya berjalan secara harmonis di atas **Docker Desktop**.
+Semuanya berjalan di atas **Docker Desktop**.
 
 ---
 
@@ -39,7 +39,10 @@ Proyek ini memisahkan tanggung jawab (*Separation of Concerns*) dengan sangat ra
  ┣ 📜 setup.sh             <-- 🛠️ Script Otomasi Instalasi ArgoCD
  ┗ 📜 Jenkinsfile          <-- ⚙️ Wilayah CI (Definisi Pipeline Jenkins)
 
-🚀 Cara Menjalankan Lab Ini (Step-by-Step)
+---
+
+## 🚀 Cara Menjalankan Lab Ini (Step-by-Step)
+
 1. Jalankan Infrastruktur Lokal (CI & Database)
 
 Pertama, kita akan menghidupkan Jenkins, PostgreSQL, dan pgAdmin di background.
@@ -49,7 +52,7 @@ docker-compose up -d
 
     Info Akses Lokal:
 
-        Jenkins: http://localhost:8080 (Gunakan docker logs jenkins-server untuk melihat password awal).
+        Jenkins: http://localhost:8080 (Gunakan perintah docker logs jenkins-server untuk melihat password awal).
 
         pgAdmin: http://localhost:5050
 
@@ -70,21 +73,18 @@ Bash
 
 kubectl port-forward svc/argocd-server -n argocd 8081:443
 
-3. Pancing "Magic" GitOps (The App of Apps)
+3. GitOps (The App of Apps)
 
 Di tab terminal baru, pancing ArgoCD dengan "Aplikasi Induk" (Root App). Anda hanya butuh 1 perintah ini untuk men-deploy seluruh aplikasi Node.js Anda!
 Bash
 
-kubectl apply -f https://raw.githubusercontent.com/ku12nia/npm/main/k8s/root-app.yaml
+kubectl apply -f [https://raw.githubusercontent.com/ku12nia/npm/main/k8s/root-app.yaml](https://raw.githubusercontent.com/ku12nia/npm/main/k8s/root-app.yaml)
 
 Selesai! 🎉
 Silakan buka Dashboard ArgoCD (http://localhost:8081). Aplikasi argocd-root-app akan muncul dan secara otomatis melahirkan ekosistem node-app-prod. Semua Pod akan tersinkronisasi otomatis setiap kali Jenkins melakukan push YAML baru!
+👨‍💻 Let's Connect!
 
----
-
-## 👨‍💻 Let's Connect!
-
-Proyek ini mendemonstrasikan pemahaman mendalam tentang **Modern CI/CD, GitOps, Kubernetes, dan Automasi Infrastruktur**. 
+Proyek ini mendemonstrasikan pemahaman mendalam tentang Modern CI/CD, GitOps, Kubernetes, Docker, dan Automasi Infrastruktur.
 
 Tertarik untuk berdiskusi lebih lanjut tentang DevOps, SRE, atau kolaborasi proyek? Let's connect!
 
