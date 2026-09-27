@@ -1,32 +1,30 @@
 #!/bin/bash
 
 echo "=========================================================="
-echo "🗑️ 1. Menghapus Argo CD dari Kubernetes"
+echo "🗑️ 1. Removing Argo CD from Kubernetes"
 echo "=========================================================="
-echo "Membersihkan Applications dan Projects (menghindari namespace stuck)..."
+echo "Cleaning up Applications and Projects (to avoid stuck namespaces)..."
 kubectl delete applications --all -n argocd --ignore-not-found=true
 kubectl delete appprojects --all -n argocd --ignore-not-found=true
 
-echo "Menghapus semua resource instalasi Argo CD..."
+echo "Removing all Argo CD installation resources..."
 kubectl delete -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml --ignore-not-found=true
 
-echo "Menghapus namespace argocd..."
+echo "Removing namespace argocd..."
 kubectl delete namespace argocd --ignore-not-found=true
 
-echo "Menghapus sisa Custom Resource Definitions (CRD)..."
+echo "Removing remaining Custom Resource Definitions (CRD)..."
 kubectl delete crd applications.argoproj.io applicationsets.argoproj.io appprojects.argoproj.io applicationsyncwindows.argoproj.io --ignore-not-found=true
 
 echo ""
 echo "=========================================================="
-echo "🛑 2. Menghentikan Jenkins, PostgreSQL, dan pgAdmin (Docker)"
+echo "🛑 2. Stopping Jenkins, PostgreSQL, and pgAdmin (Docker)"
 echo "=========================================================="
-# Hapus flag "-v" di bawah ini jika Anda TIDAK INGIN menghapus data 
-# (seperti data job Jenkins atau tabel di PostgreSQL)
 docker compose down
 
 echo ""
 echo "=========================================================="
-echo "✅ SELESAI! UNINSTALL BERHASIL"
+echo "✅ Done! Uninstallation successful."
 echo "=========================================================="
-echo "Semua layanan di Docker dan Argo CD di Kubernetes telah dibersihkan."
+echo "All services in Docker and Argo CD on Kubernetes have been cleaned up."
 echo "=========================================================="
