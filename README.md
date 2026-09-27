@@ -38,8 +38,49 @@ Proyek ini memisahkan tanggung jawab (*Separation of Concerns*) dengan sangat ra
  ┣ 📜 docker-compose.yml   <-- 🐳 Local Infra (Jenkins, Postgres, pgAdmin)
  ┣ 📜 setup.sh             <-- 🛠️ Script Otomasi Instalasi ArgoCD
  ┗ 📜 Jenkinsfile          <-- ⚙️ Wilayah CI (Definisi Pipeline Jenkins)
+```
 
 ---
+
+## 🚀 Cara Menjalankan Lab Ini (Step-by-Step)
+
+1. Jalankan Infrastruktur Lokal (CI & Database)
+
+Pertama, kita akan menghidupkan Jenkins, PostgreSQL, dan pgAdmin di background.
+Bash
+
+docker-compose up -d
+
+    Info Akses Lokal:
+        Jenkins: http://localhost:8080 (Gunakan perintah docker logs jenkins-server untuk melihat password awal).
+        pgAdmin: http://localhost:5050
+
+2. Setup K8s & Instalasi ArgoCD
+
+Pastikan fitur Kubernetes di Docker Desktop sudah aktif (berwarna hijau). Jalankan script instalasi untuk memasang ArgoCD ke dalam klaster:
+Bash
+
+chmod +x setup.sh && ./setup.sh
+
+Ambil password admin ArgoCD (disimpan di dalam K8s Secret):
+Bash
+
+kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d; echo
+
+Lakukan Port-Forwarding agar UI ArgoCD bisa diakses melalui http://localhost:8081 (Biarkan terminal ini terbuka, buka tab terminal baru untuk langkah selanjutnya):
+Bash
+
+kubectl port-forward svc/argocd-server -n argocd 8081:443
+
+3. GitOps (The App of Apps)
+
+Di tab terminal baru, pancing ArgoCD dengan "Aplikasi Induk" (Root App). Anda hanya butuh 1 perintah ini untuk men-deploy seluruh aplikasi Node.js Anda!
+Bash
+
+kubectl apply -f [https://raw.githubusercontent.com/ku12nia/npm/main/k8s/root-app.yaml](https://raw.githubusercontent.com/ku12nia/npm/main/k8s/root-app.yaml)
+
+Selesai! 🎉
+Silakan buka Dashboard ArgoCD (http://localhost:8081). Aplikasi argocd-root-app akan muncul dan secara otomatis melahirkan ekosistem node-app-prod. Semua Pod akan tersinkronisasi otomatis setiap kali Jenkins melakukan push YAML baru!
 
 👨‍💻 Let's Connect!
 
