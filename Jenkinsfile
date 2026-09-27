@@ -31,7 +31,7 @@ pipeline {
         stage('2. Test App') {
             steps {
                 sh '''
-                docker run --rm -v ${WORKSPACE}:/app -w /app node:22-alpine sh -c "
+                docker run --rm -v ${WORKSPACE}:/app -w /app/src node:22-alpine sh -c "
                     npm ci &&
                     npm install --save-dev jest jest-junit &&
                     npx jest --ci --coverage --reporters=default --reporters=jest-junit
@@ -48,7 +48,7 @@ pipeline {
         stage('3. Build & Push Image') {
             steps {
                 echo "🏗️ Build Image: ${IMAGE_REPO}:${IMAGE_TAG}"
-                sh "docker build -t ${IMAGE_REPO}:${IMAGE_TAG} ."
+                sh "docker build -t ${IMAGE_REPO}:${IMAGE_TAG} ./src"
                 
                 if (params.DEPLOY_ENV == 'prod') {
                     sh "docker tag ${IMAGE_REPO}:${IMAGE_TAG} ${IMAGE_REPO}:latest"

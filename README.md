@@ -29,4 +29,8 @@ Perhatikan folder `k8s/` karena di sinilah "Magic" GitOps itu terjadi:
  ┃ ┃ ┗ 📜 node-app-prod.yaml        <-- (2) Sang Tukang (Child App)
  ┃ ┗ 📜 app-deployment.yaml         <-- (3) Blueprint Rumah (K8s Manifest)
  ┣ 📜 Jenkinsfile                   <-- Pipeline CI
- ┗ 📜 package.json, dkk             <-- Source Code Aplikasi Node.js
+ ┣ 📂 src                  <-- Wilayah Source Code Aplikasi
+ ┃ ┣ 📜 package.json
+ ┃ ┣ 📜 index.js
+ ┃ ┣ 📜 index.test.js
+ ┃ ┗ 📜 Dockerfile         <-- (Pindahkan Dockerfile ke sini)
