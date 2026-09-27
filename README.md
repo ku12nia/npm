@@ -44,48 +44,56 @@ Proyek ini memisahkan tanggung jawab (*Separation of Concerns*) dengan sangat ra
 
 ## 🚀 Cara Menjalankan Lab Ini (Step-by-Step)
 
-1. Jalankan Infrastruktur Lokal (CI & Database)
+### 1. Jalankan Infrastruktur Lokal (CI & Database)
 
-Pertama, kita akan menghidupkan Jenkins, PostgreSQL, dan pgAdmin di background.
-Bash
+Pertama, kita akan menghidupkan Jenkins, PostgreSQL, dan pgAdmin di *background*.
 
+```bash
 docker-compose up -d
+```
 
-    Info Akses Lokal:
-        Jenkins: http://localhost:8080 (Gunakan perintah docker logs jenkins-server untuk melihat password awal).
-        pgAdmin: http://localhost:5050
+**Info Akses Lokal:**
+* **Jenkins:** `http://localhost:8080` (Gunakan perintah `docker logs jenkins-server` untuk melihat password awal).
+* **pgAdmin:** `http://localhost:5050`
 
-2. Setup K8s & Instalasi ArgoCD
+### 2. Setup K8s & Instalasi ArgoCD
 
-Pastikan fitur Kubernetes di Docker Desktop sudah aktif (berwarna hijau). Jalankan script instalasi untuk memasang ArgoCD ke dalam klaster:
-Bash
+Pastikan fitur Kubernetes di Docker Desktop sudah aktif (berwarna hijau). Jalankan *script* instalasi untuk memasang ArgoCD ke dalam klaster:
 
+```bash
 chmod +x setup.sh && ./setup.sh
+```
 
 Ambil password admin ArgoCD (disimpan di dalam K8s Secret):
-Bash
 
+```bash
 kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d; echo
+```
 
-Lakukan Port-Forwarding agar UI ArgoCD bisa diakses melalui http://localhost:8081 (Biarkan terminal ini terbuka, buka tab terminal baru untuk langkah selanjutnya):
-Bash
+Lakukan *Port-Forwarding* agar UI ArgoCD bisa diakses melalui `http://localhost:8081`. 
+*(Biarkan terminal ini terbuka, buka tab terminal baru untuk langkah selanjutnya)*:
 
+```bash
 kubectl port-forward svc/argocd-server -n argocd 8081:443
+```
 
-3. GitOps (The App of Apps)
+### 3. GitOps (The App of Apps)
 
-Di tab terminal baru, pancing ArgoCD dengan "Aplikasi Induk" (Root App). Anda hanya butuh 1 perintah ini untuk men-deploy seluruh aplikasi Node.js Anda!
-Bash
+Di tab terminal baru, pancing ArgoCD dengan "Aplikasi Induk" (*Root App*). Anda hanya butuh 1 perintah ini untuk men-deploy seluruh aplikasi Node.js Anda!
 
-kubectl apply -f [https://raw.githubusercontent.com/ku12nia/npm/main/k8s/root-app.yaml](https://raw.githubusercontent.com/ku12nia/npm/main/k8s/root-app.yaml)
+```bash
+kubectl apply -f https://raw.githubusercontent.com/ku12nia/npm/main/k8s/root-app.yaml
+```
 
-Selesai! 🎉
-Silakan buka Dashboard ArgoCD (http://localhost:8081). Aplikasi argocd-root-app akan muncul dan secara otomatis melahirkan ekosistem node-app-prod. Semua Pod akan tersinkronisasi otomatis setiap kali Jenkins melakukan push YAML baru!
+**Selesai!** 🎉 
+Silakan buka Dashboard ArgoCD (`http://localhost:8081`). Aplikasi `argocd-root-app` akan muncul dan secara otomatis melahirkan ekosistem `node-app-prod`. Semua Pod akan tersinkronisasi otomatis setiap kali Jenkins melakukan *push* YAML baru!
 
-👨‍💻 Let's Connect!
+---
+
+## 👨‍💻 Let's Connect!
 
 Proyek ini mendemonstrasikan pemahaman mendalam tentang Modern CI/CD, GitOps, Kubernetes, Docker, dan Automasi Infrastruktur.
 
-Tertarik untuk berdiskusi lebih lanjut tentang DevOps, SRE, atau kolaborasi proyek? Let's connect!
+Tertarik untuk berdiskusi lebih lanjut tentang DevOps, SRE, atau kolaborasi proyek? *Let's connect!*
 
 [![LinkedIn Profile](https://img.shields.io/badge/LinkedIn-Dedi_Mohammad_Kurnia-0A66C2?style=for-the-badge&logo=linkedin)](https://www.linkedin.com/in/dedimohammadkurnia/)
