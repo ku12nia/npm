@@ -7,7 +7,7 @@ pipeline {
 
     options {
         buildDiscarder(logRotator(numToKeepStr: '10'))
-        disableConcurrentBuilds() // Cegah bentrok jika pipeline jalan bersamaan
+        disableConcurrentBuilds() // Prevent conflicts if pipelines operate simultaneously.
     }
 
     environment {
@@ -90,7 +90,7 @@ pipeline {
             }
         }
         
-        // STAGE 5 (ArgoCD CLI) DIHAPUS - Karena ArgoCD sudah disetting 'automated sync' di argocd-app.yaml
+        // STAGE 5 (ArgoCD CLI) REMOVED – Because 'automated sync' has already been configured in argocd-app.yaml for ArgoCD.
     }
     
     post {

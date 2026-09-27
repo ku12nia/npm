@@ -7,91 +7,99 @@
 ![Postgres](https://img.shields.io/badge/PostgreSQL-Database-336791?logo=postgresql)
 [![LinkedIn](https://img.shields.io/badge/Connect-LinkedIn-0A66C2?logo=linkedin)](https://www.linkedin.com/in/dedimohammadkurnia/)
 
-Repositori ini menyediakan ekosistem **Full-Stack Local DevOps & GitOps** yang siap pakai. Proyek ini mengintegrasikan *CI/CD Pipeline* modern menggunakan Jenkins, manajemen *database* lokal (PostgreSQL + pgAdmin), serta otomasi *deployment* ke Kubernetes menggunakan **ArgoCD** dengan menerapkan pola **App of Apps**. Seluruh infrastruktur dirancang untuk beroperasi secara terintegrasi di atas **Docker Desktop**.
+This repository provides a ready-to-use **Full-Stack Local DevOps & GitOps** ecosystem. It integrates a modern CI/CD pipeline using Jenkins, local database management (PostgreSQL + pgAdmin), and automated deployments to Kubernetes using **ArgoCD** following the **App of Apps** pattern. The entire infrastructure is designed to run seamlessly on top of **Docker Desktop**.
 
 ---
 
-## 🏗️ Arsitektur & Ekosistem
+## 🏗️ Architecture & Ecosystem
 
-Proyek ini menerapkan prinsip pemisahan tanggung jawab (*Separation of Concerns*) secara terstruktur melalui komponen-komponen berikut:
+This project applies the principle of **Separation of Concerns** through the following components:
 
-1. **Local Infrastructure (Docker Compose):** Mengelola layanan Jenkins (CI Server), PostgreSQL (Database), dan pgAdmin (Database Manager) dalam *environment* kontainer yang terisolasi.
-2. **Jenkins (Continuous Integration):** Mengelola *pipeline* otomatis yang mencakup penarikan *source code*, eksekusi *testing*, proses *build* Docker Image untuk aplikasi Node.js, *push* ke Docker Hub, hingga pembaruan *manifest* Kubernetes di repositori Git. Proses ini berjalan secara independen tanpa interaksi langsung dengan klaster Kubernetes.
-3. **ArgoCD (Continuous Deployment):** Berperan sebagai pengontrol *deployment* utama (*GitOps Controller*). ArgoCD bertugas memantau direktori `k8s/` di Git. Saat Jenkins memperbarui versi *image tag*, ArgoCD akan mendeteksi perubahan tersebut dan secara otomatis melakukan sinkronisasi untuk menerapkannya ke klaster Kubernetes lokal.
+1. **Local Infrastructure (Docker Compose):** Manages Jenkins (CI Server), PostgreSQL (Database), and pgAdmin (Database Manager) within an isolated container environment.
+2. **Jenkins (Continuous Integration):** Manages automated pipelines that handle source code checkout, testing, building Docker images for the Node.js application, pushing to Docker Hub, and updating Kubernetes manifests in the Git repository—all independently without direct interaction with the Kubernetes cluster.
+3. **ArgoCD (Continuous Deployment):** Acts as the primary GitOps controller. ArgoCD monitors the `k8s/` directory in Git. Whenever Jenkins updates the image tag, ArgoCD automatically detects the change and synchronizes it to your local Kubernetes cluster.
 
 ---
 
-## 📂 Struktur Repositori
+## 📂 Repository Structure
 
 ```text
 📦 npm
- ┣ 📂 k8s                  <-- ☸️ Wilayah CD (ArgoCD & Kubernetes)
- ┃ ┣ 📜 root-app.yaml               # Konfigurasi Root App (App of Apps Controller)
+ ┣ 📂 k8s                  <-- ☸️ CD Layer (ArgoCD & Kubernetes)
+ ┃ ┣ 📜 root-app.yaml      # Root App configuration (App of Apps Controller)
  ┃ ┣ 📂 argocd-apps          
- ┃ ┃ ┗ 📜 node-app-prod.yaml        # Konfigurasi Child App untuk Node.js
- ┃ ┗ 📜 app-deployment.yaml         # Blueprint Infrastruktur App (Deployment & Service)
- ┣ 📂 src                  <-- 💻 Wilayah Source Code (Node.js)
+ ┃ ┃ ┗ 📜 node-app-prod.yaml # Child App configuration for Node.js
+ ┃ ┗ 📜 app-deployment.yaml# App Infrastructure Blueprint (Deployment & Service)
+ ┣ 📂 src                  <-- 💻 Source Code Layer (Node.js)
  ┃ ┣ 📜 index.js, package.json
- ┃ ┗ 📜 Dockerfile                  # Instruksi Build Docker Image
+ ┃ ┗ 📜 Dockerfile         # Docker Image build instructions
+ ┣ 📂 linux-bash           <-- 🐧 Setup scripts for Linux/macOS/Git Bash
+ ┣ 📂 windows              <-- 🪟 Setup scripts for Windows (PowerShell)
  ┣ 📜 docker-compose.yml   <-- 🐳 Local Infra (Jenkins, Postgres, pgAdmin)
- ┣ 📜 setup.sh             <-- 🛠️ Script Otomasi Instalasi ArgoCD
- ┗ 📜 Jenkinsfile          <-- ⚙️ Wilayah CI (Definisi Pipeline Jenkins)
+ ┗ 📜 Jenkinsfile          <-- ⚙️ CI Layer (Jenkins Pipeline definition)
 ```
 
 ---
 
-## 🚀 Cara Menjalankan Lab Ini (Step-by-Step)
+## 🚀 Step-by-Step Guide
 
-### 1. Inisialisasi Infrastruktur Lokal (CI & Database)
+Make sure that Kubernetes is enabled and running in **Docker Desktop** (green status indicator) before proceeding.
 
-Jalankan layanan Jenkins, PostgreSQL, dan pgAdmin di *background* menggunakan Docker Compose:
-
+### Option A: Linux / macOS / Git Bash Users
+Navigate to the `linux-bash` directory and run the setup script:
 ```bash
-docker-compose up -d
-```
-
-**Informasi Akses Lokal:**
-* **Jenkins:** `http://localhost:8080` (Gunakan perintah `docker logs jenkins-server` untuk melihat *password* inisialisasi awal).
-* **pgAdmin:** `http://localhost:5050`
-
-### 2. Setup Kubernetes & Instalasi ArgoCD
-
-Pastikan fitur Kubernetes di Docker Desktop sudah berstatus aktif (indikator hijau). Eksekusi *script* berikut untuk memasang ArgoCD ke dalam klaster:
-
-```bash
+cd linux-bash
 chmod +x setup.sh && ./setup.sh
 ```
 
-Dapatkan *password* admin ArgoCD yang tersimpan di dalam *Kubernetes Secret*:
-
-```bash
-kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d; echo
+### Option B: Windows (PowerShell) Users
+Open PowerShell and navigate to the `windows` directory. If you encounter execution policy restrictions, bypass them first:
+```powershell
+cd windows
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\install.ps1
 ```
 
-Lakukan *Port-Forwarding* agar antarmuka pengguna (UI) ArgoCD dapat diakses melalui `http://localhost:8081`. 
-*(Biarkan proses pada terminal ini tetap berjalan, dan buka tab terminal baru untuk langkah selanjutnya)*:
+---
 
-```bash
-kubectl port-forward svc/argocd-server -n argocd 8081:443
-```
+## 🌐 Accessing Services
 
-### 3. Implementasi GitOps (The App of Apps)
+Once the installation script completes, you can access the following dashboards and services:
 
-Pada tab terminal yang baru, terapkan konfigurasi "Aplikasi Induk" (*Root App*) untuk menginisiasi *deployment* seluruh ekosistem aplikasi secara otomatis:
+* **Jenkins:** `http://localhost:8080` *(Run `docker logs jenkins-server` to retrieve the initial password)*
+* **PostgreSQL:** `localhost:5432` (User: `postgres`, Pass: `passwordku`)
+* **pgAdmin:** `http://localhost:8050` or `http://localhost:5050` (User: `admin@admin.com`, Pass: `adminpassword`)
+  > *Note: When registering a new server in pgAdmin, use `postgres` as the Hostname/Address.*
+* **ArgoCD Dashboard:** 
+  Run the following port-forward command in a separate terminal:
+  ```bash
+  kubectl port-forward svc/argocd-server -n argocd 8082:443
+  ```
+  Then access `https://localhost:8082` (Accept self-signed certificate warning, login with username `admin`).
 
-```bash
-kubectl apply -f https://raw.githubusercontent.com/ku12nia/npm/main/k8s/root-app.yaml
-```
+---
 
-**Selesai!** 🎉 
-Silakan akses *Dashboard* ArgoCD (`http://localhost:8081`). Aplikasi `argocd-root-app` akan muncul dan secara otomatis mendeploy ekosistem `node-app-prod`. Seluruh *Pod* akan terus tersinkronisasi secara otomatis setiap kali Jenkins melakukan *push* pembaruan YAML ke repositori.
+## 🗑️ Uninstall & Cleanup
+
+If you wish to remove ArgoCD from your Kubernetes cluster and stop/clean up Docker containers and their volumes, use the provided uninstall script:
+
+* **Linux / macOS / Git Bash:**
+  ```bash
+  cd linux-bash
+  chmod +x uninstall.sh && ./uninstall.sh
+  ```
+* **Windows (PowerShell):**
+  ```powershell
+  cd windows
+  .\uninstall.ps1
+  ```
 
 ---
 
 ## 👨‍💻 Let's Connect!
 
-Proyek ini didesain untuk mendemonstrasikan implementasi praktis dari Modern CI/CD, GitOps, Kubernetes, Docker, dan Automasi Infrastruktur.
+This project is designed to demonstrate practical implementations of Modern CI/CD, GitOps, Kubernetes, Docker, and Infrastructure Automation. 
 
-Tertarik untuk berdiskusi lebih lanjut mengenai praktik DevOps, SRE, atau potensi kolaborasi proyek? *Let's connect!*
+Interested in discussing DevOps practices, SRE, or potential project collaborations? Let's connect!
 
 [![LinkedIn Profile](https://img.shields.io/badge/LinkedIn-Dedi_Mohammad_Kurnia-0A66C2?style=for-the-badge&logo=linkedin)](https://www.linkedin.com/in/dedimohammadkurnia/)
