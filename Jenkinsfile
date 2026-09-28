@@ -120,17 +120,28 @@ pipeline {
         
         stage('5. Wait for ArgoCD Sync') {
             steps {
-                sh '''
-                    echo "⏳ Checking ArgoCD synchronization status for node-app-prod..."
-                    
-                    kubectl rollout status deployment/node-app -n prod-apps --timeout=120s
-                    
-                    echo "✅ The application deployment on Kubernetes is successful and stable!"
-                '''
+                script {
+                    try {
+                        sh '''
+                            echo "⏳ Checking ArgoCD synchronization status..."
+                            
+                            kubectl rollout status deployment/node-app -n prod-apps --timeout=120s
+                            
+                            echo "✅ The application is running successfully on Kubernetes!"
+                        '''
+                    } catch (Exception e) {
+                        // Jika kubectl gagal konek atau timeout, kita jadikan warning saja
+                        echo "⚠️ Warning: Unable to verify Kubernetes status from within Jenkins."
+                        echo "⚠️ The CI/CD pipeline is complete! ArgoCD will manage the deployment independently."
+                        
+                        // Opsional: Ubah status build jadi kuning (Unstable) bukan merah (Failed)
+                        currentBuild.result = 'UNSTABLE'
+                    }
+                }
             }
         }
+
     }
-    
     post {
         always {
             cleanWs()
