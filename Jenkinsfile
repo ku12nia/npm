@@ -106,7 +106,17 @@ pipeline {
             }
         }
         
-        // STAGE 5 (ArgoCD CLI) REMOVED – Because 'automated sync' has already been configured in argocd-app.yaml for ArgoCD.
+        stage('5. Wait for ArgoCD Sync') {
+            steps {
+                sh '''
+                    echo "⏳ Checking ArgoCD synchronization status for node-app-prod..."
+                    
+                    kubectl rollout status deployment/node-app -n prod-apps --timeout=120s
+                    
+                    echo "✅ The application deployment on Kubernetes is successful and stable!"
+                '''
+            }
+        }
     }
     
     post {
