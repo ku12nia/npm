@@ -1,7 +1,8 @@
 services:
   # --- JENKINS ---
   jenkins:
-    image: jenkins/jenkins:lts
+    #image: jenkins/jenkins:lts
+    build: .
     container_name: jenkins-local
     user: root
     ports:
@@ -10,7 +11,7 @@ services:
     volumes:
       - jenkins_home:/var/jenkins_home
       - /var/run/docker.sock:/var/run/docker.sock
-      - /usr/bin/docker:/usr/bin/docker
+      #- /usr/bin/docker:/usr/bin/docker
     environment:
       - GIT_SSL_NO_VERIFY=true
     restart: unless-stopped
