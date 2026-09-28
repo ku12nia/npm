@@ -39,7 +39,7 @@ pipeline {
 
                 docker build -t temp-test-env -f Dockerfile.test .
                 set +e
-                docker run --name test-runner temp-test-env sh -c "cd src && npm install && npx jest --ci --coverage --reporters=default --reporters=jest-junit"
+                docker run --name test-runner temp-test-env sh -c "cd src && sed -i '1s/^\\xEF\\xBB\\xBF//' package.json && npm install && npx jest --ci --coverage --reporters=default --reporters=jest-junit"
                 TEST_RESULT=$?
                 set -e
                 docker cp test-runner:/app/src/junit.xml ./junit.xml || echo "Warning: File junit.xml tidak ditemukan"
