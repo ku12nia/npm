@@ -63,20 +63,32 @@ pipeline {
                 echo "🔐 Push ke Docker Hub..."
                 
                 sh """
-                    # 1. Build image dengan tag spesifik
+                    set -e
                     docker build -t ${IMAGE_REPO}:${IMAGE_TAG} ./src
-                    
-                    # 2. Login Docker Hub
                     echo \$DOCKER_CREDS_PSW | docker login -u \$DOCKER_CREDS_USR --password-stdin
-                    
-                    # 3. Push tag spesifik
-                    docker push ${IMAGE_REPO}:${IMAGE_TAG}
-                    
-                    # 4. Jika environment prod, lakukan tag latest dan push menggunakan BASH Script
+                    push_with_retry() {
+                        local image_tag=\$1
+                        echo "🚀 Memulai push untuk: \$image_tag"
+                        
+                        for i in {1..3}; do
+                            # Jika berhasil, keluar dari loop (sukses)
+                            if docker push \$image_tag; then
+                                echo "✅ Push berhasil!"
+                                return 0
+                            else
+                                echo "⚠️ Push gagal (Percobaan \$i dari 3). Retry dalam 5 detik..."
+                                sleep 5
+                            fi
+                        done
+                        
+                        echo "❌ Gagal push \$image_tag setelah 3 kali percobaan."
+                        return 1
+                    }
+                    push_with_retry ${IMAGE_REPO}:${IMAGE_TAG}
                     if [ "${params.DEPLOY_ENV}" = "prod" ]; then
-                        echo "🚀 Environment PROD terdeteksi, pushing latest tag..."
+                        echo "🚀 Environment PROD terdeteksi, menyiapkan tag latest..."
                         docker tag ${IMAGE_REPO}:${IMAGE_TAG} ${IMAGE_REPO}:latest
-                        docker push ${IMAGE_REPO}:latest
+                        push_with_retry ${IMAGE_REPO}:latest
                     fi
                 """
             }
