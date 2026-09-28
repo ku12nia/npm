@@ -1,6 +1,7 @@
 Write-Host "==========================================================" -ForegroundColor Cyan
 Write-Host "1. Running Jenkins, PostgreSQL, and pgAdmin (Docker Desktop)" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
+docker compose build --no-cache
 docker compose up -d
 
 Write-Host "`nWaiting for Jenkins to initialize (20s)..." -ForegroundColor Magenta
@@ -14,6 +15,9 @@ if ($jenkinsId) {
     if ($rawPass) {
         $jenkinsPass = $rawPass.Trim()
     }
+    
+    Write-Host "`nMemeriksa instalasi kubectl di dalam container Jenkins..." -ForegroundColor Cyan
+    docker exec $jenkinsId kubectl version --client
 }
 
 if ([string]::IsNullOrWhiteSpace($jenkinsPass)) {
@@ -34,7 +38,6 @@ Write-Host "`n==========================================================" -Foreg
 Write-Host "3. Complete The Installation Process" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
 
-# Password Argo CD
 $encodedPass = kubectl get secret argocd-initial-admin-secret -n argocd -o jsonpath="{.data.password}"
 if ($encodedPass) {
     $argocdPass = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($encodedPass))
