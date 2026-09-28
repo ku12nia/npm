@@ -1,8 +1,8 @@
 ﻿apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: prod-app
-  namespace: apps
+  name: node-app
+  #namespace: apps
 spec:
   replicas: 1
   selector:

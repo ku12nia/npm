@@ -71,7 +71,7 @@ Once the installation script completes, you can access the following dashboards 
 * **pgAdmin:** `http://localhost:8081` (You need to create a .env file to configure the credentials.)
   > *Note: When registering a new server in pgAdmin, use `postgres` as the Hostname/Address.*
 * **ArgoCD Dashboard:** 
-  Run the following port-forward command in a separate terminal:
+  Open https://localhost -> If Not Working, Run the following port-forward command in a separate terminal:
   ```bash
   kubectl port-forward svc/argocd-server -n argocd 8082:443
   ```

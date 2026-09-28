@@ -54,7 +54,7 @@ Write-Host "   InitialPasswordAdmin : $jenkinsPass login using Username : jenkin
 Write-Host " - PostgreSQL : localhost:5432 (User: postgres, Pass: pg-local)"
 Write-Host " - pgAdmin    : http://localhost:8081 (User: dedimk.devops@gmail.com, Pass: pgadmin-local)"
 Write-Host "                *When adding a server in pgAdmin, use 'postgres' as the Host name/address"
-Write-Host " - Argo CD    : If Not Working, Run this command to access:"
+Write-Host " - Argo CD    : Open https://localhost -> If Not Working, Run this command to access:"
 Write-Host "                kubectl port-forward svc/argocd-server -n argocd 8082:443" -ForegroundColor Yellow
 Write-Host "                Then open: https://localhost:8082"
 Write-Host "                User   : admin"
