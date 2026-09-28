@@ -33,18 +33,20 @@ pipeline {
         stage('2. Test App') {
             steps {
                 sh '''
-                docker build -t temp-test-env -f - . <<EOF
-                FROM node:22-alpine
-                WORKDIR /app
-                COPY src/ ./src/
-                EOF
+                echo "FROM node:22-alpine" > Dockerfile.test
+                echo "WORKDIR /app" >> Dockerfile.test
+                echo "COPY src/ ./src/" >> Dockerfile.test
 
-                set +e                
+                docker build -t temp-test-env -f Dockerfile.test .
+                set +e
                 docker run --name test-runner temp-test-env sh -c "cd src && npm install && npx jest --ci --coverage --reporters=default --reporters=jest-junit"
                 TEST_RESULT=$?
                 set -e
                 docker cp test-runner:/app/src/junit.xml ./junit.xml || echo "Warning: File junit.xml tidak ditemukan"
+                
+                # Cleanup container and files
                 docker rm -f test-runner
+                rm -f Dockerfile.test
                 exit $TEST_RESULT
                 '''
             }
