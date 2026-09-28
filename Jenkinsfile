@@ -123,14 +123,30 @@ pipeline {
                 script {
                     try {
                         sh '''
-                            echo "⏳ Checking ArgoCD synchronization status..."
+                            echo "⏳ Waiting for ArgoCD to detect changes from GitHub (this can take up to 3 minutes)..."
                             
+                            for i in {1..40}; do
+                                if kubectl get deployment node-app -n prod-apps --server=https://host.docker.internal:6443 --insecure-skip-tls-verify > /dev/null 2>&1; then
+                                    echo "✅ The 'node-app' deployment has been created by ArgoCD!"
+                                    break
+                                else
+                                    echo "ArgoCD not yet synced... (Waiting 5 seconds, attempt $i of 40)"
+                                    sleep 5
+                                fi
+                                
+                                if [ $i -eq 40 ]; then
+                                    echo "❌ Timeout! ArgoCD is taking too long to sync."
+                                    exit 1
+                                fi
+                            done
+                            
+                            echo "⏳ Memeriksa status kesiapan Pod..."
                             kubectl rollout status deployment/node-app -n prod-apps \
                                 --server=https://host.docker.internal:6443 \
                                 --insecure-skip-tls-verify \
                                 --timeout=120s
-                            
-                            echo "✅ The application is running successfully on Kubernetes!"
+                                
+                            echo "✅ The application was successfully pulled by ArgoCD and is running on Kubernetes!"
                         '''
                     } catch (Exception e) {
                         echo "⚠️ Warning: Unable to verify Kubernetes status from within Jenkins."
