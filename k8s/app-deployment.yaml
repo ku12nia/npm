@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
       - name: prod-app
-        image: ku12nia/nodejs:21-prod
+        image: ku12nia/nodejs:22-prod
         imagePullPolicy: Always
         ports:
         - containerPort: 3000
