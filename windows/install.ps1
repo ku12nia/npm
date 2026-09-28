@@ -30,10 +30,10 @@ Write-Host "==========================================================" -Foregro
 kubectl delete namespace argocd --ignore-not-found=true --force --grace-period=0
 kubectl create namespace argocd
 kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
-
 Write-Host "`nWaiting for Argo CD pods to become ready (this may take 1-2 minutes)..." -ForegroundColor Magenta
 kubectl wait --for=condition=ready pod --all -n argocd --timeout=300s
-
+Write-Host "`nPermanently exposing the ArgoCD UI (LoadBalancer)" -ForegroundColor Cyan
+kubectl patch svc argocd-server -n argocd -p '{\"spec\": {\"type\": \"LoadBalancer\"}}'
 Write-Host "`n==========================================================" -ForegroundColor Cyan
 Write-Host "3. Complete The Installation Process" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
@@ -54,7 +54,7 @@ Write-Host "   InitialPasswordAdmin : $jenkinsPass login using Username : jenkin
 Write-Host " - PostgreSQL : localhost:5432 (User: postgres, Pass: pg-local)"
 Write-Host " - pgAdmin    : http://localhost:8081 (User: dedimk.devops@gmail.com, Pass: pgadmin-local)"
 Write-Host "                *When adding a server in pgAdmin, use 'postgres' as the Host name/address"
-Write-Host " - Argo CD    : Run this command to access:"
+Write-Host " - Argo CD    : If Not Working, Run this command to access:"
 Write-Host "                kubectl port-forward svc/argocd-server -n argocd 8082:443" -ForegroundColor Yellow
 Write-Host "                Then open: https://localhost:8082"
 Write-Host "                User   : admin"
