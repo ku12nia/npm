@@ -119,39 +119,27 @@ pipeline {
         }
         
         stage('5. Wait for ArgoCD Sync') {
+            options {
+                retry(10)
+            }
             steps {
                 script {
                     try {
                         sh '''
-                            echo "⏳ Waiting for ArgoCD to detect changes from GitHub (this can take up to 3 minutes)..."
-                            
-                            for i in {1..40}; do
-                                if kubectl get deployment node-app -n prod-apps --server=https://host.docker.internal:6443 --insecure-skip-tls-verify > /dev/null 2>&1; then
-                                    echo "✅ The 'node-app' deployment has been created by ArgoCD!"
-                                    break
-                                else
-                                    echo "ArgoCD not yet synced... (Waiting 5 seconds, attempt $i of 40)"
-                                    sleep 5
-                                fi
-                                
-                                if [ $i -eq 40 ]; then
-                                    echo "❌ Timeout! ArgoCD is taking too long to sync."
-                                    exit 1
-                                fi
-                            done
-                            
-                            echo "⏳ Memeriksa status kesiapan Pod..."
+                            echo "⏳ Waiting for ArgoCD synchronization (Attempting to check deployment...)"
+                            kubectl get deployment node-app -n prod-apps --server=https://host.docker.internal:6443 --insecure-skip-tls-verify
+                    
+                            echo "✅ Deployment found! Checking Pod readiness status..."
                             kubectl rollout status deployment/node-app -n prod-apps \
                                 --server=https://host.docker.internal:6443 \
                                 --insecure-skip-tls-verify \
                                 --timeout=120s
                                 
-                            echo "✅ The application was successfully pulled by ArgoCD and is running on Kubernetes!"
+                            echo "🎉 Done! The application has been successfully pulled by ArgoCD and is running on Kubernetes!"
                         '''
                     } catch (Exception e) {
-                        echo "⚠️ Warning: Unable to verify Kubernetes status from within Jenkins."
-                        echo "⚠️ The CI/CD pipeline is complete! ArgoCD will manage the deployment independently."
-                        currentBuild.result = 'UNSTABLE'
+                        sleep(time: 15, unit: 'SECONDS')
+                        error "Deployment not found, retrying..."
                     }
                 }
             }
