@@ -66,16 +66,20 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 
 Once the installation script completes, you can access the following dashboards and services:
 
-* **Jenkins:** `http://localhost:8080` *(Run `docker logs jenkins-server` to retrieve the initial password)*
-* **PostgreSQL:** `localhost:5432` (User: `postgres`, Pass: `passwordku`)
-* **pgAdmin:** `http://localhost:8050` or `http://localhost:5050` (User: `admin@admin.com`, Pass: `adminpassword`)
+* **Jenkins:** `http://localhost:8080` *(Run `docker logs jenkins-server` to retrieve the InitialPasswordAdmin) Next, add credentials at http://localhost:8080/manage/credentials/ with the credential type "Username with password" and the ID `dockerhub-creds` and `github-creds`.*
+* **PostgreSQL:** `localhost:5432` (You need to create a .env file to configure the credentials.)
+* **pgAdmin:** `http://localhost:8081` (You need to create a .env file to configure the credentials.)
   > *Note: When registering a new server in pgAdmin, use `postgres` as the Hostname/Address.*
 * **ArgoCD Dashboard:** 
   Run the following port-forward command in a separate terminal:
   ```bash
   kubectl port-forward svc/argocd-server -n argocd 8082:443
   ```
-  Then access `https://localhost:8082` (Accept self-signed certificate warning, login with username `admin`).
+  Then access `https://localhost:8082` (Accept self-signed certificate warning, login with username `admin`)
+  Encode the output of this command
+  ```bash
+   kubectl get secret argocd-initial-admin-secret -n argocd -o jsonpath="{.data.password}
+  ```
 
 ---
 

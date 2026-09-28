@@ -21,7 +21,7 @@ services:
     image: postgres:17-alpine
     container_name: postgres-17-alpine
     environment:
-      POSTGRES_PASSWORD: pg-local
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
       - "5432:5432"
     volumes:
@@ -35,8 +35,8 @@ services:
     image: dpage/pgadmin4:latest
     container_name: pgadmin-local
     environment:
-      PGADMIN_DEFAULT_EMAIL: dedimk.devops@gmail.com
-      PGADMIN_DEFAULT_PASSWORD: pgadmin-local
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD}
     ports:
       - "8081:80"
     volumes:

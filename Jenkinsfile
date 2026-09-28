@@ -12,7 +12,7 @@ pipeline {
 
     environment {
         DOCKER_CREDS = credentials('dockerhub-creds')
-        GIT_TOKEN    = credentials('github-access-token')
+        GIT_TOKEN    = credentials('github-creds')
         IMAGE_REPO   = "ku12nia/nodejs"
         IMAGE_TAG    = "${env.BUILD_NUMBER}-${params.DEPLOY_ENV}"
         TARGET_BRANCH = (params.DEPLOY_ENV == 'prod') ? 'main' : params.DEPLOY_ENV
@@ -66,25 +66,23 @@ pipeline {
 
         stage('4. Update Manifest (Trigger GitOps)') {
             steps {
-                echo "✨ Update YAML di branch: ${TARGET_BRANCH}"
+                echo "✨ Update YAML on branch: ${TARGET_BRANCH}"
                 sh """
-                    # Konfigurasi Git Identity
+                    # Git Identity Configuration
                     git config user.email "dedimk.devops@gmail.com"
                     git config user.name "Jenkins GitOps Bot"
 
-                    # Update file manifest (menggunakan sed seperti kode asli Anda)
+                    # Update file manifest
                     sed -i 's|image: ${IMAGE_REPO}:.*|image: ${IMAGE_REPO}:${IMAGE_TAG}|g' k8s/app-deployment.yaml
 
                     if ! git diff --quiet; then
                         git add k8s/app-deployment.yaml
-                        # Tambahkan [skip ci] agar Jenkins tidak terpicu ulang oleh push ini!
                         git commit -m "ci(argocd): update image to ${IMAGE_TAG} [skip ci]"
                         
-                        # Push menggunakan token secara aman
                         git push https://\${GIT_TOKEN_USR}:\${GIT_TOKEN_PSW}@github.com/ku12nia/npm.git HEAD:${TARGET_BRANCH}
-                        echo "🚀 Berhasil update Git. ArgoCD akan segera sinkronisasi secara otomatis!"
+                        echo "🚀 Git update successful. ArgoCD will automatically synchronize shortly!"
                     else
-                        echo "⚠️ Tidak ada perubahan manifest."
+                        echo "⚠️ There are no changes to the manifest."
                     fi
                 """
             }
