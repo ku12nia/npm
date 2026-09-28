@@ -125,7 +125,10 @@ pipeline {
                         sh '''
                             echo "⏳ Checking ArgoCD synchronization status..."
                             
-                            kubectl rollout status deployment/node-app -n prod-apps --timeout=120s
+                            kubectl rollout status deployment/node-app -n prod-apps \
+                                --server=https://host.docker.internal:6443 \
+                                --insecure-skip-tls-verify \
+                                --timeout=120s
                             
                             echo "✅ The application is running successfully on Kubernetes!"
                         '''
