@@ -50,19 +50,25 @@ pipeline {
         stage('3. Build & Push Image') {
             steps {
                 echo "🏗️ Build Image: ${IMAGE_REPO}:${IMAGE_TAG}"
-                sh "docker build -t ${IMAGE_REPO}:${IMAGE_TAG} ./src"
-                
-                if (params.DEPLOY_ENV == 'prod') {
-                    sh "docker tag ${IMAGE_REPO}:${IMAGE_TAG} ${IMAGE_REPO}:latest"
-                }
-
                 echo "🔐 Push ke Docker Hub..."
-                sh "echo \$DOCKER_CREDS_PSW | docker login -u \$DOCKER_CREDS_USR --password-stdin"
-                sh "docker push ${IMAGE_REPO}:${IMAGE_TAG}"
                 
-                if (params.DEPLOY_ENV == 'prod') {
-                    sh "docker push ${IMAGE_REPO}:latest"
-                }
+                sh """
+                    # 1. Build image dengan tag spesifik
+                    docker build -t ${IMAGE_REPO}:${IMAGE_TAG} ./src
+                    
+                    # 2. Login Docker Hub
+                    echo \$DOCKER_CREDS_PSW | docker login -u \$DOCKER_CREDS_USR --password-stdin
+                    
+                    # 3. Push tag spesifik
+                    docker push ${IMAGE_REPO}:${IMAGE_TAG}
+                    
+                    # 4. Jika environment prod, lakukan tag latest dan push menggunakan BASH Script
+                    if [ "${params.DEPLOY_ENV}" = "prod" ]; then
+                        echo "🚀 Environment PROD terdeteksi, pushing latest tag..."
+                        docker tag ${IMAGE_REPO}:${IMAGE_TAG} ${IMAGE_REPO}:latest
+                        docker push ${IMAGE_REPO}:latest
+                    fi
+                """
             }
         }
 
