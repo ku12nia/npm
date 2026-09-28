@@ -33,7 +33,7 @@ kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/st
 Write-Host "`nWaiting for Argo CD pods to become ready (this may take 1-2 minutes)..." -ForegroundColor Magenta
 kubectl wait --for=condition=ready pod --all -n argocd --timeout=300s
 Write-Host "Mendaftarkan manifest ArgoCD Application..." -ForegroundColor Cyan
-kubectl apply -f k8s/argocd-apps/node-app-prod.yaml
+kubectl apply -f ../k8s/argocd-apps/node-app-prod.yaml
 Write-Host "`nPermanently exposing the ArgoCD UI (LoadBalancer)" -ForegroundColor Cyan
 kubectl patch svc argocd-server -n argocd -p '{\"spec\": {\"type\": \"LoadBalancer\"}}'
 Write-Host "`n==========================================================" -ForegroundColor Cyan
