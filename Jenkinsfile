@@ -14,14 +14,16 @@ pipeline {
         DOCKER_CREDS = credentials('dockerhub-creds')
         GIT_TOKEN    = credentials('github-creds')
         IMAGE_REPO   = "ku12nia/nodejs"
-        IMAGE_TAG    = "${env.BUILD_NUMBER}-${params.DEPLOY_ENV}"
-        TARGET_BRANCH = (params.DEPLOY_ENV == 'prod') ? 'main' : params.DEPLOY_ENV
+        // IMAGE_TAG    = "${env.BUILD_NUMBER}-${params.DEPLOY_ENV}"
+        // TARGET_BRANCH = (params.DEPLOY_ENV == 'prod') ? 'main' : params.DEPLOY_ENV
     }
 
     stages {
         stage('1. Checkout') {
             steps {
                 script {
+		    env.IMAGE_TAG = "${env.BUILD_NUMBER}-${params.DEPLOY_ENV}"
+                    env.TARGET_BRANCH = (params.DEPLOY_ENV == 'prod') ? 'main' : params.DEPLOY_ENV
                     currentBuild.displayName = "#${env.BUILD_NUMBER} - ${params.DEPLOY_ENV}"
                 }
                 checkout scm

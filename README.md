@@ -66,7 +66,7 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 
 Once the installation script completes, you can access the following dashboards and services:
 
-* **Jenkins:** `http://localhost:8080` *(Run `docker logs jenkins-server` to retrieve the InitialPasswordAdmin) Next, add credentials at http://localhost:8080/manage/credentials/ with the credential type "Username with password" and the ID `dockerhub-creds` and `github-creds`.*
+* **Jenkins:** `http://localhost:8080` *(Run `docker logs jenkins-server` to retrieve the InitialPasswordAdmin).* Next, add credentials at http://localhost:8080/manage/credentials/ with the credential type "Username with password" and the ID `dockerhub-creds` and `github-creds`. Ensure the "Lightweight checkout" option at http://localhost:8080/job/(yourpipeline)/configure is checked.
 * **PostgreSQL:** `localhost:5432` (You need to create a .env file to configure the credentials.)
 * **pgAdmin:** `http://localhost:8081` (You need to create a .env file to configure the credentials.)
   > *Note: When registering a new server in pgAdmin, use `postgres` as the Hostname/Address.*
