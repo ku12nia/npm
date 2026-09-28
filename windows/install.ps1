@@ -10,13 +10,13 @@ $jenkinsId = docker ps -q --filter "name=jenkins"
 $jenkinsPass = ""
 
 if ($jenkinsId) {
-    $containerId = $jenkinsId.Split([Environment]::NewLine)[0].Trim()
-    if ($containerId) {
-        $jenkinsPass = (docker exec $containerId cat /var/jenkins_home/secrets/initialAdminPassword 2>$null).Trim()
+    $rawPass = docker exec $jenkinsId cat /var/jenkins_home/secrets/initialAdminPassword 2>$null
+    if ($rawPass) {
+        $jenkinsPass = $rawPass.Trim()
     }
 }
 
-if (-not $jenkinsPass) {
+if ([string]::IsNullOrWhiteSpace($jenkinsPass)) {
     $jenkinsPass = "InitAdminPassword has been performed; please log in using the credentials registered in Jenkins."
 }
 

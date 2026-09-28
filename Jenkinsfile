@@ -33,15 +33,24 @@ pipeline {
         stage('2. Test App') {
             steps {
                 sh '''
-                docker run --rm -v ${WORKSPACE}:/app -w /app/src node:22-alpine sh -c "
-                    npm install &&
-                    npx jest --ci --coverage --reporters=default --reporters=jest-junit
-                "
+                docker build -t temp-test-env -f - . <<EOF
+                FROM node:22-alpine
+                WORKDIR /app
+                COPY src/ ./src/
+                EOF
+
+                set +e                
+                docker run --name test-runner temp-test-env sh -c "cd src && npm install && npx jest --ci --coverage --reporters=default --reporters=jest-junit"
+                TEST_RESULT=$?
+                set -e
+                docker cp test-runner:/app/src/junit.xml ./junit.xml || echo "Warning: File junit.xml tidak ditemukan"
+                docker rm -f test-runner
+                exit $TEST_RESULT
                 '''
             }
             post {
-                success {
-                    junit 'junit.xml'
+                always {
+                    junit allowEmptyResults: true, testResults: 'junit.xml'
                 }
             }
         }
