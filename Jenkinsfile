@@ -34,8 +34,7 @@ pipeline {
             steps {
                 sh '''
                 docker run --rm -v ${WORKSPACE}:/app -w /app/src node:22-alpine sh -c "
-                    npm ci &&
-                    npm install --save-dev jest jest-junit &&
+                    npm install &&
                     npx jest --ci --coverage --reporters=default --reporters=jest-junit
                 "
                 '''

@@ -47,8 +47,7 @@ Write-Host "Done! Setup successful." -ForegroundColor Green
 Write-Host "==========================================================" -ForegroundColor Green
 Write-Host "ACCESS YOUR SERVICES:"
 Write-Host " - Jenkins    : http://localhost:8080"
-Write-Host "   InitialPasswordAdmin : $jenkinsPass" -ForegroundColor Green
-Write-Host "   If you have initialPasswordAdmin, log in using Username : jenkins and Password : jenkins" -ForegroundColor Green
+Write-Host "   InitialPasswordAdmin : $jenkinsPass login using Username : jenkins and Password : jenkins"  -ForegroundColor Green
 Write-Host " - PostgreSQL : localhost:5432 (User: postgres, Pass: pg-local)"
 Write-Host " - pgAdmin    : http://localhost:8081 (User: dedimk.devops@gmail.com, Pass: pgadmin-local)"
 Write-Host "                *When adding a server in pgAdmin, use 'postgres' as the Host name/address"
