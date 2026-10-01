@@ -76,14 +76,12 @@ Once the installation script completes, you can access the following dashboards 
   kubectl port-forward svc/argocd-server -n argocd 8082:443
   ```
   Then access `https://localhost:8082` (Accept self-signed certificate warning, login with username `admin`)
-  Encode the output of this command
-  Powershell
+  Encode the output of this command on Powershell
   ```bash
    [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($(kubectl get secret argocd-initial-admin-secret -n argocd -o jsonpath="{.data.password}")))
   ```
-  Bash
+  If you using Bash
   ```bash
-  Powershell
    kubectl get secret argocd-initial-admin-secret -n argocd -o jsonpath="{.data.password}" | base64 --decode
   ```
 
