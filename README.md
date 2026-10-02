@@ -5,9 +5,12 @@
 ![Kubernetes](https://img.shields.io/badge/Kubernetes-GitOps-blue?logo=kubernetes)
 ![Docker](https://img.shields.io/badge/Docker-Desktop-2496ED?logo=docker)
 ![Postgres](https://img.shields.io/badge/PostgreSQL-Database-336791?logo=postgresql)
-[![LinkedIn](https://img.shields.io/badge/Connect-LinkedIn-0A66C2?logo=linkedin)](https://www.linkedin.com/in/dedimohammadkurnia/)
+![Vault](https://img.shields.io/badge/Vault-Secrets-FF0000?logo=vault)
+![Prometheus](https://img.shields.io/badge/Prometheus-Monitoring-E6522C?logo=prometheus)
+![Grafana](https://img.shields.io/badge/Grafana-Dashboard-F46800?logo=grafana)
+[![LinkedIn](https://img.shields.io/badge/Connect-LinkedIn-0A66C2?logo=linkedin)]([https://www.linkedin.com/in/dedimohammadkurnia/](https://www.linkedin.com/in/dedimohammadkurnia/))
 
-This repository provides a ready-to-use **Full-Stack Local DevOps & GitOps** ecosystem. It integrates a modern CI/CD pipeline using Jenkins, local database management (PostgreSQL + pgAdmin), and automated deployments to Kubernetes using **ArgoCD** following the **App of Apps** pattern. The entire infrastructure is designed to run seamlessly on top of **Docker Desktop**.
+This repository provides a ready-to-use **Full-Stack Local DevOps & GitOps** ecosystem. It integrates a modern CI/CD pipeline using Jenkins, local database management (PostgreSQL + pgAdmin), HashiCorp Vault for secrets management, monitoring with Prometheus & Grafana, and automated deployments to Kubernetes using **ArgoCD** following the **App of Apps** pattern. The entire infrastructure is designed to run seamlessly on top of **Docker Desktop**.
 
 ---
 
@@ -15,9 +18,10 @@ This repository provides a ready-to-use **Full-Stack Local DevOps & GitOps** eco
 
 This project applies the principle of **Separation of Concerns** through the following components:
 
-1. **Local Infrastructure (Docker Compose):** Manages Jenkins (CI Server), PostgreSQL (Database), and pgAdmin (Database Manager) within an isolated container environment.
+1. **Local Infrastructure (Docker Compose):** Manages Jenkins (CI Server), PostgreSQL (Database), pgAdmin (Database Manager), Prometheus, and Grafana within an isolated container environment.
 2. **Jenkins (Continuous Integration):** Manages automated pipelines that handle source code checkout, testing, building Docker images for the Node.js application, pushing to Docker Hub, and updating Kubernetes manifests in the Git repository—all independently without direct interaction with the Kubernetes cluster.
 3. **ArgoCD (Continuous Deployment):** Acts as the primary GitOps controller. ArgoCD monitors the `k8s/` directory in Git. Whenever Jenkins updates the image tag, ArgoCD automatically detects the change and synchronizes it to your local Kubernetes cluster.
+4. **HashiCorp Vault & Monitoring Stack:** Injects dynamic secrets into the Node.js deployment via Vault Agent Injector and scrapes cluster metrics using Prometheus & Grafana.
 
 ---
 
@@ -28,6 +32,9 @@ This project applies the principle of **Separation of Concerns** through the fol
  ┣ 📂 ci                   
  ┃ ┗ 📜 Jenkinsfile        
  ┣ 📂 config               
+ ┃ ┣ 📜 postgres17-connect.json
+ ┃ ┣ 📜 prometheus.yml
+ ┃ ┗ 📜 pgadmin.json
  ┣ 📂 k8s                  <-- ☸️ Transformasi ke Helm Chart
  ┃ ┣ 📜 root-app.yaml      
  ┃ ┣ 📂 argocd-apps          
@@ -40,7 +47,12 @@ This project applies the principle of **Separation of Concerns** through the fol
  ┃   ┣ 📜 Chart.yaml         # Metadata Chart
  ┃   ┗ 📜 values.yaml        # Pusat variabel (Image Tag, Port, Vault Config)
  ┣ 📂 scripts              
- ┃ ┗ 📜 install.ps1        
+ ┃ ┣ 📂 bash
+ ┃ ┃ ┣ 📜 install.sh
+ ┃ ┃ ┗ 📜 uninstall.sh
+ ┃ ┗ 📂 powershell
+ ┃   ┣ 📜 install.ps1        
+ ┃   ┗ 📜 uninstall.ps1        
  ┣ 📂 src                  
  ┃ ┣ 📜 index.js, package.json
  ┃ ┗ 📜 Dockerfile         
@@ -50,21 +62,38 @@ This project applies the principle of **Separation of Concerns** through the fol
 
 ---
 
+## ⚙️ Environment Variables (.env Setup)
+
+Before running the local infrastructure using Docker Compose, you must create a `.env` file in the root directory (`npm/.env`) to configure your local credentials and database secrets.
+
+Create a file named `.env` and add the following configuration:
+
+```env
+# PostgreSQL Configuration
+POSTGRES_PASSWORD=pg-local
+
+# pgAdmin Configuration
+PGADMIN_EMAIL=dedimk.devops@gmail.com
+PGADMIN_PASSWORD=pgadmin-local
+```
+
+---
+
 ## 🚀 Step-by-Step Guide
 
 Make sure that Kubernetes is enabled and running in **Docker Desktop** (green status indicator) before proceeding.
 
 ### Option A: Linux / macOS / Git Bash Users
-Navigate to the `linux-bash` directory and run the setup script:
+Navigate to the `scripts/bash` directory and run the setup script:
 ```bash
-cd linux-bash
-chmod +x setup.sh && ./setup.sh
+cd scripts/bash
+chmod +x install.sh && ./install.sh
 ```
 
 ### Option B: Windows (PowerShell) Users
-Open PowerShell and navigate to the `windows` directory. If you encounter execution policy restrictions, bypass them first:
+Open PowerShell and navigate to the `scripts\powershell` directory. If you encounter execution policy restrictions, bypass them first:
 ```powershell
-cd windows
+cd scripts\powershell
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 .\install.ps1
 ```
@@ -75,9 +104,9 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 
 Once the installation script completes, you can access the following dashboards and services:
 
-* **Jenkins:** `http://localhost:8080` *(Run `docker logs jenkins-server` to retrieve the InitialPasswordAdmin).* Next, add credentials at http://localhost:8080/manage/credentials/ using the "Username with password" credential type, with the IDs `dockerhub-creds` and `github-creds`. For `github-creds`, create a new token (*classic* type) at https://github.com/settings/tokens, then update your password using that token. Ensure the "Lightweight checkout" option at http://localhost:8080/job/(yourpipeline)/configure is checked.
-* **PostgreSQL:** `localhost:5432` (You need to create a .env file to configure the credentials.)
-* **pgAdmin:** `http://localhost:8081` (You need to create a .env file to configure the credentials.)
+* **Jenkins:** `http://localhost:8080` *(Run `docker logs jenkins-server` to retrieve the InitialPasswordAdmin).* Next, add credentials at http://localhost:8080/manage/credentials/ using the "Username with password" credential type, with the IDs `dockerhub-creds` and `github-creds`. For `github-creds`, create a new token (*classic* type) at [https://github.com/settings/tokens](https://github.com/settings/tokens), then update your password using that token. Ensure the "Lightweight checkout" option at http://localhost:8080/job/(yourpipeline)/configure is checked.
+* **PostgreSQL:** `localhost:5432` (Configured via your `.env` file.)
+* **pgAdmin:** `http://localhost:8081` (Configured via your `.env` file.)
   > *Note: When registering a new server in pgAdmin, use `postgres` as the Hostname/Address.*
 * **ArgoCD Dashboard:** 
   Open https://localhost -> If Not Working, Run the following port-forward command in a separate terminal:
@@ -93,21 +122,30 @@ Once the installation script completes, you can access the following dashboards 
   ```bash
    kubectl get secret argocd-initial-admin-secret -n argocd -o jsonpath="{.data.password}" | base64 --decode
   ```
+* **HashiCorp Vault (Dev Mode):**
+  Run: `kubectl port-forward svc/vault -n vault 8200:8200`
+  Then open `http://localhost:8200` (Login with Token: `root`)
+* **Grafana:**
+  Run: `kubectl port-forward svc/prometheus-stack-grafana -n monitoring 8083:80`
+  Then open `http://localhost:8083` (User: `admin`)
+* **Prometheus:**
+  Run: `kubectl port-forward svc/prometheus-stack-kube-prom-prometheus -n monitoring 9090:9090`
+  Then open `http://localhost:9090`
 
 ---
 
 ## 🗑️ Uninstall & Cleanup
 
-If you wish to remove ArgoCD from your Kubernetes cluster and stop/clean up Docker containers and their volumes, use the provided uninstall script:
+If you wish to remove ArgoCD, Vault, and Prometheus from your Kubernetes cluster and stop/clean up Docker containers and their volumes, use the provided uninstall script:
 
 * **Linux / macOS / Git Bash:**
   ```bash
-  cd linux-bash
+  cd scripts/bash
   chmod +x uninstall.sh && ./uninstall.sh
   ```
 * **Windows (PowerShell):**
   ```powershell
-  cd windows
+  cd scripts\powershell
   Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
   .\uninstall.ps1
   ```
