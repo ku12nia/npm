@@ -22,7 +22,7 @@ pipeline {
         stage('1. Checkout') {
             steps {
                 script {
-		    env.IMAGE_TAG = "${env.BUILD_NUMBER}-${params.DEPLOY_ENV}"
+                    env.IMAGE_TAG = "${env.BUILD_NUMBER}-${params.DEPLOY_ENV}"
                     env.TARGET_BRANCH = (params.DEPLOY_ENV == 'prod') ? 'main' : params.DEPLOY_ENV
                     currentBuild.displayName = "#${env.BUILD_NUMBER} - ${params.DEPLOY_ENV}"
                 }
@@ -64,8 +64,10 @@ pipeline {
                 
                 sh """
                     set -e
-                    docker build -t ${IMAGE_REPO}:${IMAGE_TAG} ./src
+                    # Menggunakan path ./src karena Dockerfile ada di dalam folder src
+                    docker build -t ${IMAGE_REPO}:${IMAGE_TAG} -f src/Dockerfile ./src
                     echo \$DOCKER_CREDS_PSW | docker login -u \$DOCKER_CREDS_USR --password-stdin
+                    
                     push_with_retry() {
                         local image_tag=\$1
                         echo "🚀 Memulai push untuk: \$image_tag"
@@ -76,7 +78,7 @@ pipeline {
                                 echo "✅ Push berhasil!"
                                 return 0
                             else
-                                echo "⚠️ Push gagal (Percobaan \$i dari 3). Retry dalam 5 detik..."
+                                echo "⚠️️ Push gagal (Percobaan \$i dari 3). Retry dalam 5 detik..."
                                 sleep 5
                             fi
                         done
@@ -84,7 +86,9 @@ pipeline {
                         echo "❌ Gagal push \$image_tag setelah 3 kali percobaan."
                         return 1
                     }
+                    
                     push_with_retry ${IMAGE_REPO}:${IMAGE_TAG}
+                    
                     if [ "${params.DEPLOY_ENV}" = "prod" ]; then
                         echo "🚀 Environment PROD terdeteksi, menyiapkan tag latest..."
                         docker tag ${IMAGE_REPO}:${IMAGE_TAG} ${IMAGE_REPO}:latest
@@ -102,12 +106,13 @@ pipeline {
                     git config user.email "dedimk.devops@gmail.com"
                     git config user.name "Jenkins GitOps Bot"
 
-                    # Update file manifest
-                    sed -i 's|image: ${IMAGE_REPO}:.*|image: ${IMAGE_REPO}:${IMAGE_TAG}|g' k8s/app-deployment.yaml
+                    # REVISI: Mengubah tag image pada file values.yaml milik Helm Chart
+                    sed -i -E "s/tag: \\\".*\\\"/tag: \\\"${IMAGE_TAG}\\\"/" k8s/node-app-chart/values.yaml
 
                     if ! git diff --quiet; then
-                        git add k8s/app-deployment.yaml
-                        git commit -m "ci(argocd): update image to ${IMAGE_TAG} [skip ci]"
+                        # REVISI: Menambahkan file values.yaml ke Git
+                        git add k8s/node-app-chart/values.yaml
+                        git commit -m "ci(argocd): update helm image tag to ${IMAGE_TAG} [skip ci]"
                         
                         git push https://\${GIT_TOKEN_USR}:\${GIT_TOKEN_PSW}@github.com/ku12nia/npm.git HEAD:${TARGET_BRANCH}
                         echo "🚀 Git update successful. ArgoCD will automatically synchronize shortly!"
@@ -127,6 +132,7 @@ pipeline {
                     try {
                         sh '''
                             echo "⏳ Waiting for ArgoCD synchronization (Attempting to check deployment...)"
+                            # Pastikan namespace sesuai dengan yang dikonfigurasi di ArgoCD (misal: apps atau prod-apps)
                             kubectl get deployment node-app -n prod-apps --server=https://host.docker.internal:6443 --insecure-skip-tls-verify
                     
                             echo "✅ Deployment found! Checking Pod readiness status..."
