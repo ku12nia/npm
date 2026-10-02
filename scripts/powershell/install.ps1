@@ -1,0 +1,137 @@
+Write-Host "==========================================================" -ForegroundColor Cyan
+Write-Host "1. Running Jenkins, PostgreSQL, and pgAdmin (Docker Desktop)" -ForegroundColor Yellow
+Write-Host "==========================================================" -ForegroundColor Cyan
+docker compose build --no-cache
+docker compose up -d
+
+Write-Host "`nWaiting for Jenkins to initialize (20s)..." -ForegroundColor Magenta
+Start-Sleep -Seconds 20
+
+$jenkinsId = docker ps -q --filter "name=jenkins"
+$jenkinsPass = ""
+
+if ($jenkinsId) {$rawPass = docker exec $jenkinsId cat /var/jenkins_home/secrets/initialAdminPassword 2>$null
+    if ($rawPass) {
+        $jenkinsPass =$rawPass.Trim()
+    }
+    
+    Write-Host "`nChecking kubectl installation inside the Jenkins container..." -ForegroundColor Cyan
+    docker exec $jenkinsId kubectl version --client
+}
+
+if ([string]::IsNullOrWhiteSpace($jenkinsPass)) {
+    $jenkinsPass = "InitAdminPassword has been performed; please log in using the credentials registered in Jenkins."
+}
+
+Write-Host "`n==========================================================" -ForegroundColor Cyan
+Write-Host "2. Setup Argo CD on Kubernetes (Docker Desktop)" -ForegroundColor Yellow
+Write-Host "==========================================================" -ForegroundColor Cyan
+kubectl delete namespace argocd --ignore-not-found=true --force --grace-period=0
+kubectl create namespace argocd
+kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+Write-Host "`nWaiting for Argo CD pods to become ready (this may take 1-2 minutes)..." -ForegroundColor Magenta
+kubectl wait --for=condition=ready pod --all -n argocd --timeout=300s
+Write-Host "Registering the ArgoCD Application manifest..." -ForegroundColor Cyan
+kubectl apply -f ../k8s/argocd-apps/node-app-prod.yaml
+Write-Host "`nPermanently exposing the ArgoCD UI (LoadBalancer)" -ForegroundColor Cyan
+kubectl patch svc argocd-server -n argocd -p '{\"spec\": {\"type\": \"LoadBalancer\"}}'
+
+
+Write-Host "`n==========================================================" -ForegroundColor Cyan
+Write-Host "3. Setup Prometheus & Grafana on Kubernetes (Helm)" -ForegroundColor Yellow
+Write-Host "==========================================================" -ForegroundColor Cyan
+if (Get-Command helm -ErrorAction SilentlyContinue) {
+    Write-Host "Creating 'monitoring' namespace..." -ForegroundColor Cyan
+    kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
+
+    Write-Host "Adding Prometheus Community Helm repo..." -ForegroundColor Cyan
+    helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+    helm repo update
+
+    Write-Host "Installing kube-prometheus-stack (Prometheus + Grafana)..." -ForegroundColor Cyan
+    helm upgrade --install prometheus-stack prometheus-community/kube-prometheus-stack -n monitoring --set grafana.service.type=LoadBalancer
+
+    Write-Host "`nWaiting for Prometheus & Grafana pods to become ready (this may take 1-2 minutes)..." -ForegroundColor Magenta
+    Start-Sleep -Seconds 15
+    kubectl wait --for=condition=ready pod --all -n monitoring --timeout=300s
+} else {
+    Write-Host "WARNING: Helm not detected! Skipping Prometheus & Grafana installation." -ForegroundColor Red
+}
+
+
+Write-Host "`n==========================================================" -ForegroundColor Cyan
+Write-Host "4. Setup HashiCorp Vault on Kubernetes (Helm)" -ForegroundColor Yellow
+Write-Host "==========================================================" -ForegroundColor Cyan
+if (Get-Command helm -ErrorAction SilentlyContinue) {
+    Write-Host "Creating 'vault' namespace..." -ForegroundColor Cyan
+    kubectl create namespace vault --dry-run=client -o yaml | kubectl apply -f -
+
+    Write-Host "Adding HashiCorp Helm repo..." -ForegroundColor Cyan
+    helm repo add hashicorp https://helm.releases.hashicorp.com
+    helm repo update
+
+    Write-Host "Installing HashiCorp Vault (Dev Mode) and Injector..." -ForegroundColor Cyan
+    # Menjalankan Vault dalam Dev Mode agar auto-unseal dan mengaktifkan mutating webhook injector
+    helm upgrade --install vault hashicorp/vault -n vault --set "server.dev.enabled=true" --set "injector.enabled=true"
+
+    Write-Host "`nWaiting for Vault pods to become ready (this may take 1-2 minutes)..." -ForegroundColor Magenta
+    Start-Sleep -Seconds 10
+    kubectl wait --for=condition=ready pod --all -n vault --timeout=300s
+} else {
+    Write-Host "WARNING: Helm not detected! Skipping Vault installation." -ForegroundColor Red
+}
+
+
+Write-Host "`n==========================================================" -ForegroundColor Cyan
+Write-Host "5. Complete The Installation Process" -ForegroundColor Yellow
+Write-Host "==========================================================" -ForegroundColor Cyan
+
+$encodedPass = kubectl get secret argocd-initial-admin-secret -n argocd -o jsonpath="{.data.password}"
+if ($encodedPass) {
+    $argocdPass = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($encodedPass))
+} else {
+    $argocdPass = "Failed to retrieve"
+}
+
+$grafanaPass = ""
+if (Get-Command helm -ErrorAction SilentlyContinue) {
+    $encodedGrafana = kubectl get secret prometheus-stack-grafana -n monitoring -o jsonpath="{.data.admin-password}" 2>$null
+    if ($encodedGrafana) {
+        $grafanaPass = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($encodedGrafana))
+    } else {
+        $grafanaPass = "prom-operator" # Default fallback
+    }
+}
+
+Write-Host "`n==========================================================" -ForegroundColor Green
+Write-Host "Done! Setup successful." -ForegroundColor Green
+Write-Host "==========================================================" -ForegroundColor Green
+Write-Host "ACCESS YOUR SERVICES:"
+Write-Host " - Jenkins    : http://localhost:8080"
+Write-Host "   InitialAdmin : $jenkinsPass (Login: jenkins / jenkins)"  -ForegroundColor Green
+Write-Host " - PostgreSQL : localhost:5432 (User: postgres, Pass: pg-local)"
+Write-Host " - pgAdmin    : http://localhost:8081 (User: dedimk.devops@gmail.com, Pass: pgadmin-local)"
+Write-Host "                *When adding a server in pgAdmin, use 'postgres' as the Host name/address"
+Write-Host " - Argo CD    : Open https://localhost -> If Not Working, Run this command to access:"
+Write-Host "                kubectl port-forward svc/argocd-server -n argocd 8082:443" -ForegroundColor Yellow
+Write-Host "                Then open: https://localhost:8082"
+Write-Host "                User   : admin"
+Write-Host "                Password: $argocdPass" -ForegroundColor Green
+
+if (Get-Command helm -ErrorAction SilentlyContinue) {
+    Write-Host " - Vault      : Run: kubectl port-forward svc/vault -n vault 8200:8200" -ForegroundColor Yellow
+    Write-Host "                Then open: http://localhost:8200"
+    Write-Host "                Token  : root (Dev Mode Default Token)" -ForegroundColor Green
+}
+
+if ($grafanaPass) {
+    Write-Host " - Grafana    : Open http://localhost:80"
+    Write-Host "                If Not Working, run: kubectl port-forward svc/prometheus-stack-grafana -n monitoring 8083:80" -ForegroundColor Yellow
+    Write-Host "                Then open: http://localhost:8083"
+    Write-Host "                User    : admin"
+    Write-Host "                Password: $grafanaPass" -ForegroundColor Green
+    
+    Write-Host " - Prometheus : Run: kubectl port-forward svc/prometheus-stack-kube-prom-prometheus -n monitoring 9090:9090" -ForegroundColor Yellow
+    Write-Host "                Then open: http://localhost:9090"
+}
+Write-Host "==========================================================" -ForegroundColor Green

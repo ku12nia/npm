@@ -1,0 +1,47 @@
+# ==========================================
+# 1. Global & Deployment Settings
+# ==========================================
+replicaCount: 1
+
+appName: prod-app
+deploymentName: node-app
+
+# ==========================================
+# 2. Container Image (CI Target)
+# ==========================================
+image:
+  repository: ku12nia/nodejs
+  pullPolicy: Always
+  tag: "27-prod" # will be automatically updated by Jenkins
+
+# ==========================================
+# 3. Networking: Service (Internal Access)
+# ==========================================
+service:
+  type: NodePort
+  port: 80
+  targetPort: 3000
+  nodePort: 30000
+
+# ==========================================
+# 4. Networking: Ingress (External Access)
+# ==========================================
+ingress:
+  enabled: false  # Change to true if you are already using a domain or reverse proxy.
+  className: "nginx"
+  annotations: {}
+    # kubernetes.io/ingress.class: nginx
+    # cert-manager.io/cluster-issuer: "letsencrypt-prod"
+  hosts:
+    - host: api.domainanda.com
+      paths:
+        - path: /
+          pathType: Prefix
+
+# ==========================================
+# 5. Security: HashiCorp Vault (Optional Injector)
+# ==========================================
+vault:
+  enabled: false  # Set to true to enable Vault Agent integration.
+  role: "node-app-role"
+  secretPath: "secret/data/apps/node-app/config"

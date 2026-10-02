@@ -2,9 +2,11 @@ services:
   # --- JENKINS ---
   jenkins:
     #image: jenkins/jenkins:lts
-    build: .
+    build: 
+      context: .
+      dockerfile: Dockerfile.jenkins
     container_name: jenkins-local
-    user: root
+    user: jenkins
     ports:
       - "8080:8080"
       - "50000:50000"
@@ -50,9 +52,45 @@ services:
     networks:
       - devops-network
 
+  # --- PROMETHEUS ---
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus-local
+    ports:
+      - "9090:9090"
+    volumes:
+      # [REVISI] Mengarahkan pembacaan file ke dalam folder config/
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    restart: unless-stopped
+    networks:
+      - devops-network
+
+  # --- GRAFANA ---
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana-local
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+    networks:
+      - devops-network
+
 volumes:
   jenkins_home:
   npm_pgdata:
+  prometheus_data:
+  grafana_data:
 
 networks:
   devops-network:

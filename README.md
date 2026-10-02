@@ -25,18 +25,27 @@ This project applies the principle of **Separation of Concerns** through the fol
 
 ```text
 📦 npm
- ┣ 📂 k8s                  <-- ☸️ CD Layer (ArgoCD & Kubernetes)
- ┃ ┣ 📜 root-app.yaml      # Root App configuration (App of Apps Controller)
+ ┣ 📂 ci                   
+ ┃ ┗ 📜 Jenkinsfile        
+ ┣ 📂 config               
+ ┣ 📂 k8s                  <-- ☸️ Transformasi ke Helm Chart
+ ┃ ┣ 📜 root-app.yaml      
  ┃ ┣ 📂 argocd-apps          
- ┃ ┃ ┗ 📜 node-app-prod.yaml # Child App configuration for Node.js
- ┃ ┗ 📜 app-deployment.yaml# App Infrastructure Blueprint (Deployment & Service)
- ┣ 📂 src                  <-- 💻 Source Code Layer (Node.js)
+ ┃ ┃ ┗ 📜 node-app-prod.yaml # Direvisi untuk membaca Helm Chart
+ ┃ ┗ 📂 node-app-chart       # 📦 Folder khusus Helm Chart Node.js
+ ┃   ┣ 📂 templates          
+ ┃   ┃ ┣ 📜 deployment.yaml  # Blueprint dinamis (termasuk Vault injector)
+ ┃   ┃ ┣ 📜 service.yaml
+ ┃   ┃ ┗ 📜 ingress.yaml
+ ┃   ┣ 📜 Chart.yaml         # Metadata Chart
+ ┃   ┗ 📜 values.yaml        # Pusat variabel (Image Tag, Port, Vault Config)
+ ┣ 📂 scripts              
+ ┃ ┗ 📜 install.ps1        
+ ┣ 📂 src                  
  ┃ ┣ 📜 index.js, package.json
- ┃ ┗ 📜 Dockerfile         # Docker Image build instructions
- ┣ 📂 linux-bash           <-- 🐧 Setup scripts for Linux/macOS/Git Bash
- ┣ 📂 windows              <-- 🪟 Setup scripts for Windows (PowerShell)
- ┣ 📜 docker-compose.yml   <-- 🐳 Local Infra (Jenkins, Postgres, pgAdmin)
- ┗ 📜 Jenkinsfile          <-- ⚙️ CI Layer (Jenkins Pipeline definition)
+ ┃ ┗ 📜 Dockerfile         
+ ┣ 📜 docker-compose.yml   
+ ┗ 📜 Dockerfile.jenkins
 ```
 
 ---
@@ -99,6 +108,7 @@ If you wish to remove ArgoCD from your Kubernetes cluster and stop/clean up Dock
 * **Windows (PowerShell):**
   ```powershell
   cd windows
+  Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
   .\uninstall.ps1
   ```
 
