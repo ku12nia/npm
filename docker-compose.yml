@@ -1,7 +1,6 @@
 services:
   # --- JENKINS ---
   jenkins:
-    #image: jenkins/jenkins:lts
     build: 
       context: .
       dockerfile: Dockerfile.jenkins
@@ -13,8 +12,8 @@ services:
     volumes:
       - jenkins_home:/var/jenkins_home
       - /var/run/docker.sock:/var/run/docker.sock
-      #- /usr/bin/docker:/usr/bin/docker
-      - ~/.kube:/root/.kube:ro
+      # Path diperbaiki ke home directory user jenkins
+      - ~/.kube:/var/jenkins_home/.kube:ro
     environment:
       - GIT_SSL_NO_VERIFY=true
     restart: unless-stopped
@@ -45,43 +44,10 @@ services:
     ports:
       - "8081:80"
     volumes:
-      - ./pgadmin.json:/pgadmin4/pgadmin.json:ro
+      # Path disesuaikan dengan folder config/
+      - ./config/pgadmin.json:/pgadmin4/pgadmin.json:ro
     depends_on:
       - postgres
-    restart: unless-stopped
-    networks:
-      - devops-network
-
-  # --- PROMETHEUS ---
-  prometheus:
-    image: prom/prometheus:latest
-    container_name: prometheus-local
-    ports:
-      - "9090:9090"
-    volumes:
-      # [REVISI] Mengarahkan pembacaan file ke dalam folder config/
-      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml
-      - prometheus_data:/prometheus
-    command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.path=/prometheus'
-    restart: unless-stopped
-    networks:
-      - devops-network
-
-  # --- GRAFANA ---
-  grafana:
-    image: grafana/grafana:latest
-    container_name: grafana-local
-    ports:
-      - "3000:3000"
-    environment:
-      - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=admin
-    volumes:
-      - grafana_data:/var/lib/grafana
-    depends_on:
-      - prometheus
     restart: unless-stopped
     networks:
       - devops-network
@@ -89,8 +55,6 @@ services:
 volumes:
   jenkins_home:
   npm_pgdata:
-  prometheus_data:
-  grafana_data:
 
 networks:
   devops-network:

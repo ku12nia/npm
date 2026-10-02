@@ -36,7 +36,6 @@ kubectl apply -f ../k8s/argocd-apps/node-app-prod.yaml
 Write-Host "`nPermanently exposing the ArgoCD UI (LoadBalancer)" -ForegroundColor Cyan
 kubectl patch svc argocd-server -n argocd -p '{\"spec\": {\"type\": \"LoadBalancer\"}}'
 
-
 Write-Host "`n==========================================================" -ForegroundColor Cyan
 Write-Host "3. Setup Prometheus & Grafana on Kubernetes (Helm)" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
@@ -49,7 +48,10 @@ if (Get-Command helm -ErrorAction SilentlyContinue) {
     helm repo update
 
     Write-Host "Installing kube-prometheus-stack (Prometheus + Grafana)..." -ForegroundColor Cyan
-    helm upgrade --install prometheus-stack prometheus-community/kube-prometheus-stack -n monitoring --set grafana.service.type=LoadBalancer
+    helm upgrade --install prometheus-stack prometheus-community/kube-prometheus-stack -n monitoring `
+        --set grafana.service.type=LoadBalancer `
+        --set grafana.service.port=8083 `
+        --set prometheus.service.type=LoadBalancer
 
     Write-Host "`nWaiting for Prometheus & Grafana pods to become ready (this may take 1-2 minutes)..." -ForegroundColor Magenta
     Start-Sleep -Seconds 15
@@ -71,8 +73,11 @@ if (Get-Command helm -ErrorAction SilentlyContinue) {
     helm repo update
 
     Write-Host "Installing HashiCorp Vault (Dev Mode) and Injector..." -ForegroundColor Cyan
-    # Menjalankan Vault dalam Dev Mode agar auto-unseal dan mengaktifkan mutating webhook injector
-    helm upgrade --install vault hashicorp/vault -n vault --set "server.dev.enabled=true" --set "injector.enabled=true"
+    helm upgrade --install vault hashicorp/vault -n vault `
+        --set "server.dev.enabled=true" `
+        --set "injector.enabled=true" `
+        --set "ui.enabled=true" `
+        --set "ui.serviceType=LoadBalancer"
 
     Write-Host "`nWaiting for Vault pods to become ready (this may take 1-2 minutes)..." -ForegroundColor Magenta
     Start-Sleep -Seconds 10
@@ -111,27 +116,14 @@ Write-Host " - Jenkins    : http://localhost:8080"
 Write-Host "   InitialAdmin : $jenkinsPass (Login: jenkins / jenkins)"  -ForegroundColor Green
 Write-Host " - PostgreSQL : localhost:5432 (User: postgres, Pass: pg-local)"
 Write-Host " - pgAdmin    : http://localhost:8081 (User: dedimk.devops@gmail.com, Pass: pgadmin-local)"
-Write-Host "                *When adding a server in pgAdmin, use 'postgres' as the Host name/address"
-Write-Host " - Argo CD    : Open https://localhost -> If Not Working, Run this command to access:"
-Write-Host "                kubectl port-forward svc/argocd-server -n argocd 8082:443" -ForegroundColor Yellow
-Write-Host "                Then open: https://localhost:8082"
-Write-Host "                User   : admin"
-Write-Host "                Password: $argocdPass" -ForegroundColor Green
+Write-Host " - Argo CD    : https://localhost (User: admin, Pass: $argocdPass)" -ForegroundColor Green
 
 if (Get-Command helm -ErrorAction SilentlyContinue) {
-    Write-Host " - Vault      : Run: kubectl port-forward svc/vault -n vault 8200:8200" -ForegroundColor Yellow
-    Write-Host "                Then open: http://localhost:8200"
-    Write-Host "                Token  : root (Dev Mode Default Token)" -ForegroundColor Green
+    Write-Host " - Vault      : http://localhost:8200 (Token: root)" -ForegroundColor Green
 }
 
 if ($grafanaPass) {
-    Write-Host " - Grafana    : Open http://localhost:80"
-    Write-Host "                If Not Working, run: kubectl port-forward svc/prometheus-stack-grafana -n monitoring 8083:80" -ForegroundColor Yellow
-    Write-Host "                Then open: http://localhost:8083"
-    Write-Host "                User    : admin"
-    Write-Host "                Password: $grafanaPass" -ForegroundColor Green
-    
-    Write-Host " - Prometheus : Run: kubectl port-forward svc/prometheus-stack-kube-prom-prometheus -n monitoring 9090:9090" -ForegroundColor Yellow
-    Write-Host "                Then open: http://localhost:9090"
+    Write-Host " - Grafana    : http://localhost:8083 (User: admin, Pass: $grafanaPass)" -ForegroundColor Green
+    Write-Host " - Prometheus : http://localhost:9090" -ForegroundColor Green
 }
 Write-Host "==========================================================" -ForegroundColor Green
