@@ -1,4 +1,11 @@
 services:
+  # jenkins-init:
+  #   image: alpine:latest
+  #   command: sh -c "chown -R 1000:1000 /var/jenkins_home"
+  #   volumes:
+  #     - jenkins_home:/var/jenkins_home
+  #   networks:
+  #     - devops-network
   # --- JENKINS ---
   jenkins:
     build: 

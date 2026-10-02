@@ -6,12 +6,17 @@ if (-not (Get-Command helm -ErrorAction SilentlyContinue)) {
     Write-Host "Helm is not detected! Attempting to install Helm using winget..." -ForegroundColor Yellow
     try {
         winget install Helm.Helm --accept-source-agreements --accept-package-agreements
-        Write-Host "`n[ACTION REQUIRED] Helm has been successfully installed!" -ForegroundColor Green
-        Write-Host "However, Windows requires a terminal restart to reload the Environment PATH." -ForegroundColor Magenta
-        Write-Host "Please CLOSE this PowerShell window, open a NEW one, and re-run this script (.\\scripts\\powershell\\install.ps1)." -ForegroundColor Magenta
-        exit
+        
+        Write-Host "Refreshing Environment PATH variables..." -ForegroundColor Cyan
+        $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+        
+        if (Get-Command helm -ErrorAction SilentlyContinue) {
+            Write-Host "✅ Helm successfully installed and loaded into current session!" -ForegroundColor Green
+        } else {
+            throw "Helm command still not found after path refresh."
+        }
     } catch {
-        Write-Host "Failed to install Helm automatically. Please install it manually: https://helm.sh/docs/intro/install/" -ForegroundColor Red
+        Write-Host "Failed to install/load Helm automatically. Please restart your terminal or install manually: https://helm.sh/docs/intro/install/" -ForegroundColor Red
         exit
     }
 } else {
@@ -21,6 +26,7 @@ if (-not (Get-Command helm -ErrorAction SilentlyContinue)) {
 Write-Host "`n==========================================================" -ForegroundColor Cyan
 Write-Host "1. Running Jenkins, PostgreSQL, and pgAdmin (Docker Desktop)" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
+docker run --rm -v npm_jenkins_home:/var/jenkins_home alpine chown -R 1000:1000 /var/jenkins_home 2>$null
 docker compose build --no-cache
 docker compose up -d
 
