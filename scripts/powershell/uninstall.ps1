@@ -42,7 +42,26 @@ if (Get-Command helm -ErrorAction SilentlyContinue) {
 }
 
 Write-Host "`n==========================================================" -ForegroundColor Cyan
-Write-Host "🛑 4. Stopping Jenkins, PostgreSQL, and pgAdmin (Docker)" -ForegroundColor Yellow
+Write-Host "🗑️ 4. Removing PGAdmin" -ForegroundColor Yellow
+Write-Host "==========================================================" -ForegroundColor Cyan
+if (Get-Command helm -ErrorAction SilentlyContinue) {
+    Write-Host "Uninstalling pgadmin Helm release..."
+    helm uninstall pgadmin -n default --ignore-not-found=true
+} else {
+    Write-Host "Helm is not installed, skipping PGAdmin cleanup." -ForegroundColor Yellow
+}
+
+Write-Host "`n==========================================================" -ForegroundColor Cyan
+Write-Host "🗑️ 5. Removing ActiveMQ Artemis" -ForegroundColor Yellow
+Write-Host "==========================================================" -ForegroundColor Cyan
+Write-Host "Deleting Artemis installation resources..."
+kubectl delete -f k8s/artemis.yaml --ignore-not-found=true
+
+Write-Host "Deleting namespace artemis..."
+kubectl delete namespace artemis --ignore-not-found=true
+
+Write-Host "`n==========================================================" -ForegroundColor Cyan
+Write-Host "🛑 6. Stopping Jenkins, PostgreSQL, and MinIO (Docker Compose)" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
 Write-Host "Stopping and removing Docker containers and default networks..."
 docker compose down
@@ -50,4 +69,4 @@ docker compose down
 Write-Host "`n==========================================================" -ForegroundColor Green
 Write-Host "✅ Done! Uninstallation successful." -ForegroundColor Green
 Write-Host "==========================================================" -ForegroundColor Green
-Write-Host "All services in Docker Desktop and Kubernetes have been fully cleaned up."
+Write-Host "All services in Docker Compose and Kubernetes have been fully cleaned up."

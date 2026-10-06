@@ -1,25 +1,16 @@
 services:
-  # jenkins-init:
-  #   image: alpine:latest
-  #   command: sh -c "chown -R 1000:1000 /var/jenkins_home"
-  #   volumes:
-  #     - jenkins_home:/var/jenkins_home
-  #   networks:
-  #     - devops-network
   # --- JENKINS ---
   jenkins:
     build: 
       context: .
       dockerfile: Dockerfile.jenkins
     container_name: jenkins-local
-    #user: jenkins
     ports:
       - "8080:8080"
       - "50000:50000"
     volumes:
       - jenkins_home:/var/jenkins_home
       - /var/run/docker.sock:/var/run/docker.sock
-      # Path diperbaiki ke home directory user jenkins
       - ~/.kube:/var/jenkins_home/.kube:ro
     environment:
       - GIT_SSL_NO_VERIFY=true
@@ -41,20 +32,19 @@ services:
     networks:
       - devops-network
 
-  # --- PGADMIN ---
-  pgadmin:
-    image: dpage/pgadmin4:latest
-    container_name: pgadmin-local
+  # --- MINIO ---
+  minio:
+    image: minio/minio:latest
+    container_name: minio-local
     environment:
-      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL}
-      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD}
+      MINIO_ROOT_USER: admin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /data --console-address ":9001"
     ports:
-      - "8081:80"
+      - "9000:9000"
+      - "9001:9001"
     volumes:
-      # Path disesuaikan dengan folder config/
-      - ./config/pgadmin.json:/pgadmin4/pgadmin.json:ro
-    depends_on:
-      - postgres
+      - minio_data:/data
     restart: unless-stopped
     networks:
       - devops-network
@@ -62,6 +52,7 @@ services:
 volumes:
   jenkins_home:
   npm_pgdata:
+  minio_data:
 
 networks:
   devops-network:
