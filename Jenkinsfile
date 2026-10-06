@@ -100,7 +100,6 @@ pipeline {
                         sh "docker tag ${imageRepo}:${imageTag} ${imageRepo}:latest"
                     }
                     
-                    // AUTO-LOGIN: Mengambil rahasia dari brankas Jenkins
                     echo "🔐 Melakukan otentikasi otomatis ke Docker Hub..."
                     withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', passwordVariable: 'DOCKER_PASS', usernameVariable: 'DOCKER_USER')]) {
                         def loginStatus = sh(

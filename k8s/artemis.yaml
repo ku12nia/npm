@@ -1,14 +1,46 @@
+---
 apiVersion: v1
 kind: Namespace
 metadata:
   name: artemis
 ---
+# 1. Kredensial dipisah ke Secret (Bisa di-inject dari .env nantinya)
+# apiVersion: v1
+# kind: Secret
+# metadata:
+#   name: artemis-credentials
+#   namespace: artemis
+# type: Opaque
+# stringData:
+#   ARTEMIS_USER: "admin"
+#   ARTEMIS_PASSWORD: "admin"
+---
+# 2. Headless Service (Wajib untuk StatefulSet agar K8s bisa melacak identitas Pod)
+apiVersion: v1
+kind: Service
+metadata:
+  name: artemis-headless
+  namespace: artemis
+spec:
+  clusterIP: None
+  ports:
+  - name: console
+    port: 8161
+  - name: broker
+    port: 61616
+  selector:
+    app: artemis
+---
+# 3. StatefulSet (Pengganti Deployment untuk aplikasi yang memiliki state/data)
 apiVersion: apps/v1
-kind: Deployment
+kind: StatefulSet
 metadata:
   name: artemis
   namespace: artemis
+  labels:
+    app: artemis
 spec:
+  serviceName: "artemis-headless"
   replicas: 1
   selector:
     matchLabels:
@@ -20,29 +52,68 @@ spec:
     spec:
       containers:
       - name: artemis
-        image: apache/activemq-artemis:latest
-        env:
-        - name: ARTEMIS_USER
-          value: admin
-        - name: ARTEMIS_PASSWORD
-          value: admin
+        # Gunakan tag versi spesifik, hindari 'latest'
+        image: apache/activemq-artemis:2.32.0
+        envFrom:
+        - secretRef:
+            name: artemis-credentials
         ports:
-        - containerPort: 8161
-        - containerPort: 61616
+        - name: console
+          containerPort: 8161
+        - name: broker
+          containerPort: 61616
+        
+        # Limitasi Resource (Mencegah Pod memakan semua RAM K3s/Node)
+        resources:
+          requests:
+            cpu: "250m"
+            memory: "512Mi"
+          limits:
+            cpu: "1000m"
+            memory: "1Gi"
+            
+        # Health Checks
+        readinessProbe:
+          httpGet:
+            path: /console/
+            port: console
+          initialDelaySeconds: 15
+          periodSeconds: 10
+        livenessProbe:
+          tcpSocket:
+            port: broker
+          initialDelaySeconds: 30
+          periodSeconds: 15
+          
+        # 4. Mount Volume ke path data Artemis
+        volumeMounts:
+        - name: artemis-data
+          mountPath: /var/lib/artemis-instance/data
+
+  # 5. Meminta K3s menyediakan Storage/Disk permanen
+  volumeClaimTemplates:
+  - metadata:
+      name: artemis-data
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: 5Gi 
 ---
+# 6. Service LoadBalancer (Untuk akses dari Windows/Browser Anda)
 apiVersion: v1
 kind: Service
 metadata:
-  name: artemis
+  name: artemis-lb
   namespace: artemis
 spec:
   type: LoadBalancer
   ports:
   - name: console
     port: 8161
-    targetPort: 8161
+    targetPort: console
   - name: broker
     port: 61616
-    targetPort: 61616
+    targetPort: broker
   selector:
     app: artemis

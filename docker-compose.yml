@@ -34,7 +34,7 @@ services:
 
   # --- MINIO ---
   minio:
-    image: minio/minio:latest
+    image: quay.io/minio/aistor/minio
     container_name: minio-local
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}

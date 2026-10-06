@@ -33,9 +33,23 @@ if (-not (Get-Command helm -ErrorAction SilentlyContinue)) {
 Write-Host "`n==========================================================" -ForegroundColor Cyan
 Write-Host "1. Running Jenkins, PostgreSQL, and MinIO (Docker Compose)" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
+
+if (-not [string]::IsNullOrWhiteSpace($env:DOCKER_USER) -and -not [string]::IsNullOrWhiteSpace($env:DOCKER_PASS)) {
+    Write-Host "Logging in to Docker Hub as $($env:DOCKER_USER)..." -ForegroundColor Cyan
+    $env:DOCKER_PASS | docker login --username $env:DOCKER_USER --password-stdin
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "❌ Docker login failed! Please check your credentials in .env" -ForegroundColor Red
+        exit
+    } else {
+        Write-Host "✅ Docker login successful!" -ForegroundColor Green
+    }
+} else {
+    Write-Host "⚠️ DOCKER_USER or DOCKER_PASS not found in .env, skipping explicit login..." -ForegroundColor Yellow
+}
+
 docker run --rm -v npm_jenkins_home:/var/jenkins_home alpine chown -R 1000:1000 /var/jenkins_home 2>$null
-docker compose build --no-cache
-docker compose up -d
+docker compose up -d --build
+#docker compose build --no-cache
 
 Write-Host "`nWaiting for Docker containers to initialize (20s)..." -ForegroundColor Magenta
 Start-Sleep -Seconds 20
@@ -107,6 +121,16 @@ helm upgrade --install vault hashicorp/vault -n vault `
 Write-Host "`n==========================================================" -ForegroundColor Cyan
 Write-Host "6. Setup ActiveMQ Artemis on Kubernetes (K3s via Manifest)" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
+Write-Host "Creating 'artemis' namespace..." -ForegroundColor Cyan
+kubectl create namespace artemis --dry-run=client -o yaml | kubectl apply -f -
+
+Write-Host "Injecting Artemis Credentials from .env to Kubernetes Secret..." -ForegroundColor Cyan
+kubectl create secret generic artemis-credentials -n artemis `
+    --from-literal=ARTEMIS_USER="$env:ARTEMIS_USER" `
+    --from-literal=ARTEMIS_PASSWORD="$env:ARTEMIS_PASSWORD" `
+    --dry-run=client -o yaml | kubectl apply -f -
+
+Write-Host "Applying Artemis StatefulSet Manifest..." -ForegroundColor Cyan
 kubectl apply -f k8s/artemis.yaml
 
 Write-Host "`nWaiting for K3s pods to become ready (this may take a few minutes)..." -ForegroundColor Magenta
@@ -114,7 +138,6 @@ Start-Sleep -Seconds 15
 kubectl wait --for=condition=ready pod --all -n monitoring --timeout=300s
 kubectl wait --for=condition=ready pod --all -n vault --timeout=300s
 kubectl wait --for=condition=ready pod --all -n artemis --timeout=300s
-
 
 Write-Host "`n==========================================================" -ForegroundColor Cyan
 Write-Host "7. Complete The Installation Process" -ForegroundColor Yellow
