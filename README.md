@@ -68,13 +68,21 @@ Before running the local infrastructure using Docker Compose, you must create a 
 
 Create a file named `.env` and add the following configuration:
 
-```env
-# PostgreSQL Configuration
+```.env
+# --- Database ---
 POSTGRES_PASSWORD=pg-local
 
-# pgAdmin Configuration
+# --- PGAdmin ---
 PGADMIN_EMAIL=dedimk.devops@gmail.com
 PGADMIN_PASSWORD=pgadmin-local
+
+# --- MinIO ---
+MINIO_ROOT_USER=admin
+MINIO_ROOT_PASSWORD=minioadmin
+
+# --- Artemis ---
+ARTEMIS_USER=admin
+ARTEMIS_PASSWORD=artemisadmin
 ```
 
 ---
