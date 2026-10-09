@@ -202,10 +202,13 @@ pipeline {
     post {
         always {
             script {
-                echo "🧹 Bersih-bersih workspace biar server gak engap..."
-                // Hapus folder node_modules dan file temporary
-                sh 'rm -rf node_modules coverage junit.xml docker.tgz docker'
-                echo "✨ Workspace sudah kinclong kembali!"
+                try {
+                    echo "🧹 Cleaning up the workspace to fix the full disk on the server."
+                    sh 'rm -rf node_modules coverage junit.xml docker.tgz docker'
+                    echo "✨ The workspace is sparkling clean again!"
+                } catch (Exception e) {
+                    echo "⚠️ Cleanup was skipped because the workspace was not ready or initialized."
+                }
             }
         }
     }
