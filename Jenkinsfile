@@ -30,6 +30,7 @@ pipeline {
                             extensions: [[$class: 'CloneOption', timeout: 30, noTags: false, reference: '', shallow: false]],
                             userRemoteConfigs: [[
                                 url: 'https://github.com/ku12nia/npm.git' 
+                                credentialsId: 'github-creds'
                             ]]
                         ])
                     }

@@ -17,6 +17,9 @@ if (Test-Path ".env") {
     exit
 }
 
+$WorkspaceName = if ($env:WORKSPACE_NAME) { $env:WORKSPACE_NAME } else { "npm-cicd" }
+$WorkspaceDir = "/var/jenkins_home/workspace/$WorkspaceName"
+
 if (-not (Get-Command helm -ErrorAction SilentlyContinue)) {
     Write-Host "Helm is not detected! Attempting to install Helm using winget..." -ForegroundColor Yellow
     try {

@@ -83,6 +83,14 @@ MINIO_ROOT_PASSWORD=minioadmin
 # --- Artemis ---
 ARTEMIS_USER=admin
 ARTEMIS_PASSWORD=artemisadmin
+
+# --- Jenkins Workspace ---
+WORKSPACE_NAME="npm-cicd"
+WORKSPACE_DIR="/var/jenkins_home/workspace/$WORKSPACE_NAME"
+
+# --- Docker Hub Credentials ---
+DOCKER_USER=ku12nia
+DOCKER_PASS=[COPY_YOUT_PAT_DOCKERHUB]
 ```
 
 ---
