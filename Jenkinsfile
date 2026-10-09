@@ -2,8 +2,8 @@ pipeline {
     agent any
     
     parameters {
-        choice(name: 'DEPLOY_ENV', choices: ['dev', 'staging', 'prod'], description: 'Pilih target environment untuk deployment')
-        booleanParam(name: 'IS_PRIVATE_REPO', defaultValue: false, description: 'Centang jika Docker Hub repository bersifat Private')
+        choice(name: 'DEPLOY_ENV', choices: ['dev', 'staging', 'prod'], description: 'Select the target environment for deployment.')
+        booleanParam(name: 'IS_PRIVATE_REPO', defaultValue: false, description: 'Check this box if the Docker Hub repository is private.')
     }
     
     options {
@@ -23,35 +23,40 @@ pipeline {
             steps {
                 script {
                     def targetBranch = (params.DEPLOY_ENV == 'prod') ? 'main' : params.DEPLOY_ENV
-                    retry(3) {
+                    
+                    try {
                         checkout([
                             $class: 'GitSCM',
                             branches: [[name: "*/${targetBranch}"]],
                             extensions: [[$class: 'CloneOption', timeout: 30, noTags: false, reference: '', shallow: false]],
                             userRemoteConfigs: [[
-                                url: 'https://github.com/ku12nia/npm.git', 
+                                url: 'https://github.com/ku12nia/npm.git',
                                 credentialsId: 'github-creds'
                             ]]
                         ])
+                        echo "✅ Successfully checked out from the branch. ${targetBranch}."
+                    } catch (Exception e) {
+                        echo "❌ Failed to check out code from the branch. ${targetBranch}."
+                        echo "Reason: ${e.getMessage()}"
+                        error("The pipeline was stopped because the repository checkout failed. Ensure that the 'github-creds' credentials are valid and the repository URL is correct.")
                     }
-                    echo "✅ Berhasil checkout dari branch ${targetBranch}."
                 }
             }
         }
         
-        stage('2. Persiapan Docker & Test App') {
+        stage('2. Docker Preparation & Test App') {
             steps {
                 script {
                     // 1. Cek dan Install Docker CLI
                     def hasDocker = sh(script: 'command -v docker', returnStatus: true) == 0
                     if (!hasDocker) {
-                        echo "⚙️ Docker belum ada. Mengunduh Docker CLI..."
+                        echo "⚙️ Docker is not present. Downloading Docker CLI."
                         sh 'curl -sSL -o docker.tgz https://download.docker.com/linux/static/stable/x86_64/docker-24.0.9.tgz'
                         sh 'tar -xzf docker.tgz'
                         sh 'mv docker/docker /usr/bin/docker'
                         sh 'chmod +x /usr/bin/docker'
                         sh 'rm -rf docker docker.tgz'
-                        echo "✅ Docker CLI berhasil dipasang!"
+                        echo "✅ Docker CLI successfully installed!"
                     }
 
                     // 2. Cek dan Install Docker Buildx (Biar build makin ngebut & warning hilang)
@@ -61,15 +66,15 @@ pipeline {
                         sh 'mkdir -p ~/.docker/cli-plugins'
                         sh 'curl -sSL -o ~/.docker/cli-plugins/docker-buildx https://github.com/docker/buildx/releases/download/v0.14.0/buildx-v0.14.0.linux-amd64'
                         sh 'chmod +x ~/.docker/cli-plugins/docker-buildx'
-                        echo "✅ Docker Buildx berhasil dipasang!"
+                        echo "✅ Docker Buildx has been successfully installed!"
                     }
 
                     // 3. Dapetin ID Container Jenkins secara otomatis!
                     def containerId = sh(script: 'hostname', returnStdout: true).trim()
-                    echo "ℹ️ Jenkins berjalan di container ID: ${containerId}"
+                    echo "ℹ️ Jenkins is running in container ID: ${containerId}"
 
                     // 4. Jalankan Unit Test (Gunakan containerId dinamis)
-                    echo "🛠️ Menjalankan Unit Test via Docker..."
+                    echo "🛠️ Running Unit Tests via Docker."
                     sh """
                     docker run --rm --volumes-from ${containerId} -w \${WORKSPACE} node:22-alpine sh -c "\
                         sed -i '1s/^\\\\xEF\\\\xBB\\\\xBF//' package.json && \
@@ -78,7 +83,7 @@ pipeline {
                         npx jest --ci --coverage --reporters=default --reporters=jest-junit \
                     "
                     """
-                    echo "✅ Unit Test Berhasil."
+                    echo "✅ Unit Test Passed."
                 }
             }
             post {
@@ -95,13 +100,13 @@ pipeline {
                     def imageRepo = "ku12nia/nodejs" 
                     def imageTag = "${env.BUILD_NUMBER}-${targetEnv}"
                     
-                    echo "🏗️ Membangun Docker Image untuk: ${targetEnv}"
+                    echo "🏗️ Building Docker image for: ${targetEnv}"
                     sh "DOCKER_BUILDKIT=1 docker build -t ${imageRepo}:${imageTag} ."            
                     if (targetEnv == 'prod') {
                         sh "docker tag ${imageRepo}:${imageTag} ${imageRepo}:latest"
                     }
                     
-                    echo "🔐 Melakukan otentikasi otomatis ke Docker Hub..."
+                    echo "🔐 Perform automatic authentication to Docker Hub."
                     withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', passwordVariable: 'DOCKER_PASS', usernameVariable: 'DOCKER_USER')]) {
                         def loginStatus = sh(
                             script: """
@@ -115,16 +120,16 @@ pipeline {
                         if (loginStatus != 0) {
                             error("❌ Gagal login ke Docker Hub! Cek kredensial 'dockerhub-creds' di setting Jenkins.")
                         }
-                        echo "✅ Login otomatis berhasil!"
+                        echo "✅ Automatic login successful!"
                         
                         // Push Image
-                        echo "🚀 Mendorong Image ke Docker Hub..."
+                        echo "🚀 Pushing the image to Docker Hub."
                         def pushStatus = sh(script: "docker push ${imageRepo}:${imageTag}", returnStatus: true)
                         
                         if (pushStatus != 0) {
-                            error("❌ Gagal push image tag ${imageTag} ke Docker Hub! Pipeline dihentikan.")
+                            error("❌ Failed to push image tag ${imageTag} ke Docker Hub! Pipeline dihentikan.")
                         }
-                        echo "✅ Berhasil push ${imageRepo}:${imageTag}"
+                        echo "✅ Push successfull ${imageRepo}:${imageTag}"
                         
                         // Push Image Latest (Khusus Prod)
                         if (targetEnv == 'prod') {
@@ -132,7 +137,7 @@ pipeline {
                             if (pushLatest != 0) {
                                 error("❌ Gagal push image tag latest. Pipeline dihentikan.")
                             }
-                            echo "✅ Berhasil push ${imageRepo}:latest"
+                            echo "✅ Push successfull ${imageRepo}:latest"
                         }
                     } // Penutup withCredentials
                 }
@@ -145,7 +150,7 @@ pipeline {
                     def imageTag = "${env.BUILD_NUMBER}-${params.DEPLOY_ENV}"
                     def targetBranch = (params.DEPLOY_ENV == 'prod') ? 'main' : params.DEPLOY_ENV
                     
-                    echo "✨ Mengupdate manifest di branch: ${targetBranch}"
+                    echo "✨ Updating the manifest in the branch: ${targetBranch}"
                     sh "sed -i 's|image: ku12nia/nodejs:.*|image: ku12nia/nodejs:${imageTag}|g' k8s/app-deployment.yaml"
                     sh 'git config --global user.email "dedimk.devops@gmail.com"'
                     sh 'git config --global user.name "Dedi Mohammad Kurnia"'
@@ -166,7 +171,7 @@ pipeline {
                             }
                         }
                     } else {
-                        echo "⚠️ Tidak ada perubahan pada manifest, skip git commit."
+                        echo "⚠️ No changes to the manifest; skip git commit."
                     }
                 }
             }
@@ -187,13 +192,13 @@ pipeline {
                         def argoLoginStatus = sh(script: "./argocd login ${argocdServer} --username admin --password ${argocdPass} --insecure", returnStatus: true)
                         if (argoLoginStatus == 0) {
                             sh "./argocd app create ${appName} --repo https://github.com/ku12nia/npm.git --path k8s --revision ${targetBranch} --dest-server https://kubernetes.default.svc --dest-namespace ${namespace} --sync-policy automated --upsert"
-                            echo "🔄 Berhasil sinkronisasi aplikasi ${appName} ke ArgoCD memantau branch ${targetBranch}."
+                            echo "🔄 App synchronization successful ${appName} to ArgoCD monitoring the branch ${targetBranch}."
                         } else {
-                            echo "⚠️ PERINGATAN: Gagal terhubung ke server ArgoCD. Sinkronisasi CLI dilewati."
+                            echo "⚠️ WARNING: Failed to connect to the ArgoCD server. CLI synchronization skipped."
                             unstable("ArgoCD Login Failed")
                         }
                     } else {
-                        echo "⚠️ Perintah 'argocd' tidak ditemukan. Stage dilewati."
+                        echo "⚠️ The 'argocd' command was not found. Stage skipped."
                     }
                 }
             }
