@@ -26,9 +26,6 @@ pipeline {
                     
                     if (env.LOCAL_SRC_PATH) {
                         echo "💻 Local Directory Mode Active!"
-                        echo "Source code is directly mounted to workspace: ${env.LOCAL_SRC_PATH}"
-                        echo "Skipping Git clone and protecting workspace from cleanWs()..."
-                        
                         if (!fileExists('Jenkinsfile')) {
                             error("❌ The workspace is empty! Make sure you have cloned the repo into the Windows host folder.")
                         } else {
@@ -63,33 +60,71 @@ pipeline {
             }
         }
         
-        stage('2. Docker Preparation & Test App') {
+        // stage('2. Docker Preparation & Test App') {
+        //     steps {
+        //         script {
+        //             def hasDocker = sh(script: 'command -v docker', returnStatus: true) == 0
+        //             if (!hasDocker) {
+        //                 echo "⚙️ Docker is not present. Downloading Docker CLI."
+        //                 sh 'curl -sSL -o docker.tgz https://download.docker.com/linux/static/stable/x86_64/docker-24.0.9.tgz'
+        //                 sh 'tar -xzf docker.tgz'
+        //                 sh 'mv docker/docker /usr/bin/docker'
+        //                 sh 'chmod +x /usr/bin/docker'
+        //                 sh 'rm -rf docker docker.tgz'
+        //                 echo "✅ Docker CLI successfully installed!"
+        //             }
+
+        //             def hasBuildx = sh(script: 'docker buildx version', returnStatus: true) == 0
+        //             if (!hasBuildx) {
+        //                 echo "⚙️ The Buildx plugin is not yet installed. Downloading Buildx."
+        //                 sh 'mkdir -p ~/.docker/cli-plugins'
+        //                 sh 'curl -sSL -o ~/.docker/cli-plugins/docker-buildx https://github.com/docker/buildx/releases/download/v0.14.0/buildx-v0.14.0.linux-amd64'
+        //                 sh 'chmod +x ~/.docker/cli-plugins/docker-buildx'
+        //                 echo "✅ Docker Buildx has been successfully installed!"
+        //             }
+
+        //             def containerId = sh(script: 'hostname', returnStdout: true).trim()
+        //             echo "ℹ️ Jenkins is running in container ID: ${containerId}"
+
+        //             echo "🛠️ Running Unit Tests via Docker."
+                    
+        //             dir('src') {
+        //                 sh """
+        //                 docker run --rm --volumes-from ${containerId} -w \${WORKSPACE}/src node:22-alpine sh -c "\
+        //                     sed -i '1s/^\\\\xEF\\\\xBB\\\\xBF//' package.json && \
+        //                     npm install && \
+        //                     npm install --save-dev jest jest-junit && \
+        //                     npx jest --ci --coverage --reporters=default --reporters=jest-junit --passWithNoTests \
+        //                 "
+        //                 """
+        //             }
+        //             echo "✅ Unit Test Passed."
+        //         }
+        //     }
+        //     post {
+        //         success {
+        //             script {
+        //                 def junitFile = 'src/junit.xml'
+        //                 if (fileExists(junitFile)) {
+        //                     try {
+        //                         junit junitFile
+        //                         echo "✅ JUnit test report recorded successfully."
+        //                     } catch (Exception e) {
+        //                         echo "⚠️ JUnit report found but empty or invalid, skipping..."
+        //                     }
+        //                 } else {
+        //                     echo "⚠️ No JUnit report found, skipping..."
+        //                 }
+        //             }
+        //         }
+        //     }
+        // }
+
+        stage('2. Test App via Docker') {
             steps {
                 script {
-                    def hasDocker = sh(script: 'command -v docker', returnStatus: true) == 0
-                    if (!hasDocker) {
-                        echo "⚙️ Docker is not present. Downloading Docker CLI."
-                        sh 'curl -sSL -o docker.tgz https://download.docker.com/linux/static/stable/x86_64/docker-24.0.9.tgz'
-                        sh 'tar -xzf docker.tgz'
-                        sh 'mv docker/docker /usr/bin/docker'
-                        sh 'chmod +x /usr/bin/docker'
-                        sh 'rm -rf docker docker.tgz'
-                        echo "✅ Docker CLI successfully installed!"
-                    }
-
-                    def hasBuildx = sh(script: 'docker buildx version', returnStatus: true) == 0
-                    if (!hasBuildx) {
-                        echo "⚙️ The Buildx plugin is not yet installed. Downloading Buildx."
-                        sh 'mkdir -p ~/.docker/cli-plugins'
-                        sh 'curl -sSL -o ~/.docker/cli-plugins/docker-buildx https://github.com/docker/buildx/releases/download/v0.14.0/buildx-v0.14.0.linux-amd64'
-                        sh 'chmod +x ~/.docker/cli-plugins/docker-buildx'
-                        echo "✅ Docker Buildx has been successfully installed!"
-                    }
-
                     def containerId = sh(script: 'hostname', returnStdout: true).trim()
-                    echo "ℹ️ Jenkins is running in container ID: ${containerId}"
-
-                    echo "🛠️ Running Unit Tests via Docker."
+                    echo "🛠️ Running Unit Tests via Docker (Container ID: ${containerId})..."
                     
                     dir('src') {
                         sh """
@@ -101,22 +136,13 @@ pipeline {
                         "
                         """
                     }
-                    echo "✅ Unit Test Passed."
                 }
             }
             post {
                 success {
                     script {
-                        def junitFile = 'src/junit.xml'
-                        if (fileExists(junitFile)) {
-                            try {
-                                junit junitFile
-                                echo "✅ JUnit test report recorded successfully."
-                            } catch (Exception e) {
-                                echo "⚠️ JUnit report found but empty or invalid, skipping..."
-                            }
-                        } else {
-                            echo "⚠️ No JUnit report found, skipping..."
+                        if (fileExists('src/junit.xml')) {
+                            try { junit 'src/junit.xml' } catch (e) { echo "⚠️ Invalid JUnit report, skipping..." }
                         }
                     }
                 }
@@ -131,14 +157,12 @@ pipeline {
                     def imageTag = "${env.BUILD_NUMBER}-${targetEnv}"
                     
                     echo "🏗️ Building Docker image for: ${targetEnv}"
-                    
                     dir('src') {
                         sh "DOCKER_BUILDKIT=1 docker build -t ${imageRepo}:${imageTag} ."            
                         if (targetEnv == 'prod') {
                             sh "docker tag ${imageRepo}:${imageTag} ${imageRepo}:latest"
                         }
                     }
-                    
                     echo "🔐 Perform automatic authentication to Docker Hub."
                     withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', passwordVariable: 'DOCKER_PASS', usernameVariable: 'DOCKER_USER')]) {
                         def loginStatus = sh(
@@ -197,7 +221,7 @@ pipeline {
                         sh "git add k8s/node-app-chart/values.yaml"
                         sh "git commit -m 'ci(argocd): update helm image tag to ${imageTag} [skip ci]'"
                         
-                        withCredentials([gitUsernamePassword(credentialsId: 'github-access-token')]) {
+                        withCredentials([gitUsernamePassword(credentialsId: 'github-creds')]) {
                             def gitPushStatus = sh(script: "git push origin HEAD:${targetBranch}", returnStatus: true)
                             if (gitPushStatus == 0) {
                                 echo "🚀 Successfully pushed the Helm manifest update to the GitHub branch. ${targetBranch}!"
@@ -213,43 +237,64 @@ pipeline {
             }
         }
 
-        stage('5. Trigger Sync ArgoCD') {
+        stage('5. Trigger ArgoCD Sync') {
             steps {
                 script {
-                    sh 'curl -sSL -o argocd https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64 && chmod +x argocd'
+                    def targetBranch = (params.DEPLOY_ENV == 'prod') ? 'main' : params.DEPLOY_ENV
+                    def appName = "node-app-${params.DEPLOY_ENV}" 
+                    def namespace = "${params.DEPLOY_ENV}-apps" 
+                    def argocdServer = "host.docker.internal:8081"
                     
-                    def hasArgocd = sh(script: 'test -x ./argocd', returnStatus: true) == 0
-                    if (hasArgocd) {
-                        def targetBranch = (params.DEPLOY_ENV == 'prod') ? 'main' : params.DEPLOY_ENV
-                        def appName = "node-app-${params.DEPLOY_ENV}" 
-                        def namespace = "${params.DEPLOY_ENV}-apps" 
-                        
-                        // Use Jenkins Credentials (create an ID 'argocd-creds' of type 'Username with Password')
-                        withCredentials([usernamePassword(credentialsId: 'argocd-creds', passwordVariable: 'ARGOCD_PASS', usernameVariable: 'ARGOCD_USER')]) {
-                            def argoLoginStatus = sh(script: "./argocd login $ARGOCD_SERVER --username \$ARGOCD_USER --password \$ARGOCD_PASS --insecure", returnStatus: true)
-                            
-                            if (argoLoginStatus == 0) {
-                                // Path changed to k8s/node-app-chart (Helm)
-                                sh "./argocd app create ${appName} --repo https://github.com/ku12nia/npm.git --path k8s/node-app-chart --revision ${targetBranch} --dest-server https://kubernetes.default.svc --dest-namespace ${namespace} --sync-policy automated --upsert"
-                                
-                                // Before migrate to Helm Chart
-                                // sh "./argocd app create ${appName} --repo https://github.com/ku12nia/npm.git --path k8s --revision ${targetBranch} --dest-server https://kubernetes.default.svc --dest-namespace ${namespace} --sync-policy automated --upsert"
-
-                                // Force sync to run immediately without waiting 3 minutes.
-                                sh "./argocd app sync ${appName}"
-                                
-                                echo "🔄 App synchronization successful ${appName} to ArgoCD monitoring the branch ${targetBranch}."
-                            } else {
-                                echo "⚠️ WARNING: Failed to connect to the ArgoCD server. CLI synchronization skipped."
-                                unstable("ArgoCD Login Failed")
-                            }
-                        }
-                    } else {
-                        echo "⚠️ The 'argocd' command was not found. Stage skipped."
+                    withCredentials([usernamePassword(credentialsId: 'argocd-creds', passwordVariable: 'ARGOCD_PASS', usernameVariable: 'ARGOCD_USER')]) {
+                        sh """
+                            set +x
+                            argocd login ${argocdServer} --username \$ARGOCD_USER --password \$ARGOCD_PASS --insecure
+                            argocd app create ${appName} --repo https://github.com/ku12nia/npm.git --path k8s/node-app-chart --revision ${targetBranch} --dest-server https://kubernetes.default.svc --dest-namespace ${namespace} --sync-policy automated --upsert
+                            argocd app sync ${appName}
+                        """
                     }
+                    echo "🔄 App synchronization successful for ${appName}!"
                 }
             }
         }
+
+        // stage('5. Trigger Sync ArgoCD') {
+        //     steps {
+        //         script {
+        //             sh 'curl -sSL -o argocd https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64 && chmod +x argocd'
+                    
+        //             def hasArgocd = sh(script: 'test -x ./argocd', returnStatus: true) == 0
+        //             if (hasArgocd) {
+        //                 def argocdServer = "host.docker.internal:8081"
+        //                 def targetBranch = (params.DEPLOY_ENV == 'prod') ? 'main' : params.DEPLOY_ENV
+        //                 def appName = "node-app-${params.DEPLOY_ENV}" 
+        //                 def namespace = "${params.DEPLOY_ENV}-apps" 
+                        
+        //                 withCredentials([usernamePassword(credentialsId: 'argocd-creds', passwordVariable: 'ARGOCD_PASS', usernameVariable: 'ARGOCD_USER')]) {
+        //                     def argoLoginStatus = sh(
+        //                         script: """
+        //                             set +x
+        //                             ./argocd login ${argocdServer} --username \$ARGOCD_USER --password \$ARGOCD_PASS --insecure
+        //                         """, 
+        //                         returnStatus: true
+        //                     )
+                            
+        //                     if (argoLoginStatus == 0) {
+        //                         sh "./argocd app create ${appName} --repo https://github.com/ku12nia/npm.git --path k8s/node-app-chart --revision ${targetBranch} --dest-server https://kubernetes.default.svc --dest-namespace ${namespace} --sync-policy automated --upsert"
+        //                         sh "./argocd app sync ${appName}"
+                                
+        //                         echo "🔄 App synchronization successful ${appName} to ArgoCD monitoring the branch ${targetBranch}."
+        //                     } else {
+        //                         echo "⚠️ WARNING: Failed to connect to the ArgoCD server. CLI synchronization skipped."
+        //                         unstable("ArgoCD Login Failed")
+        //                     }
+        //                 }
+        //             } else {
+        //                 echo "⚠️ The 'argocd' command was not found. Stage skipped."
+        //             }
+        //         }
+        //     }
+        // }
 // Next Stage
     }    
     post {
