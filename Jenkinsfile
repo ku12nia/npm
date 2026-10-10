@@ -23,22 +23,41 @@ pipeline {
             steps {
                 script {
                     def targetBranch = (params.DEPLOY_ENV == 'prod') ? 'main' : params.DEPLOY_ENV
-                    
-                    try {
-                        checkout([
-                            $class: 'GitSCM',
-                            branches: [[name: "*/${targetBranch}"]],
-                            extensions: [[$class: 'CloneOption', timeout: 30, noTags: false, reference: '', shallow: false]],
-                            userRemoteConfigs: [[
-                                url: 'https://github.com/ku12nia/npm.git',
-                                credentialsId: 'github-creds'
-                            ]]
-                        ])
-                        echo "✅ Successfully checked out from the branch. ${targetBranch}."
-                    } catch (Exception e) {
-                        echo "❌ Failed to check out code from the branch. ${targetBranch}."
-                        echo "Reason: ${e.getMessage()}"
-                        error("The pipeline was stopped because the repository checkout failed. Ensure that the 'github-creds' credentials are valid and the repository URL is correct.")
+                    def localSrcExists = fileExists('/var/jenkins_home/workspace/npm-cicd')
+
+                    if (localSrcExists) {
+                        echo "💻 Local mounted directory detected! Copying source code locally (Offline Mode)..."
+                        try {
+                            sh 'cp -r /var/jenkins_home/workspace/local-src/. .'
+                            echo "✅ Successfully loaded source code from local mount."
+                        } catch (Exception e) {
+                            echo "❌ Failed to copy local source code."
+                            echo "Reason: ${e.getMessage()}"
+                            error("The pipeline was stopped because local file copying failed.")
+                        }
+                    } else {
+                        echo "🌐 Local directory not found. Fetching from GitHub repository (Online Mode)..."
+                        cleanWs()
+                        
+                        try {
+                            checkout([
+                                $class: 'GitSCM',
+                                branches: [[name: "*/${targetBranch}"]],
+                                extensions: [
+                                    [$class: 'CleanBeforeCheckout'],
+                                    [$class: 'CloneOption', timeout: 30, noTags: false, reference: '', shallow: false]
+                                ],
+                                userRemoteConfigs: [[
+                                    url: 'https://github.com/ku12nia/npm.git',
+                                    credentialsId: 'github-creds'
+                                ]]
+                            ])
+                            echo "✅ Successfully checked out from the branch: ${targetBranch}."
+                        } catch (Exception e) {
+                            echo "❌ Failed to check out code from the branch: ${targetBranch}."
+                            echo "Reason: ${e.getMessage()}"
+                            error("The pipeline was stopped because the repository checkout failed. Ensure that the 'github-creds' credentials are valid and the repository URL is correct.")
+                        }
                     }
                 }
             }
