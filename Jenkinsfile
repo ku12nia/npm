@@ -24,19 +24,19 @@ pipeline {
                 script {
                     def targetBranch = (params.DEPLOY_ENV == 'prod') ? 'main' : params.DEPLOY_ENV
                     
-                    if (env.LOCAL_SRC_PATH && fileExists(env.LOCAL_SRC_PATH)) {
-                        echo "💻 Local mounted directory detected at ${env.LOCAL_SRC_PATH}! Copying source code locally (Offline Mode)..."
-                        try {
-                            cleanWs()
-                            sh "cp -a ${env.LOCAL_SRC_PATH}/. ."
-                            echo "✅ Successfully loaded source code from local mount."
-                        } catch (Exception e) {
-                            echo "❌ Failed to copy local source code."
-                            echo "Reason: ${e.getMessage()}"
-                            error("The pipeline was stopped because local file copying failed.")
+                    if (env.LOCAL_SRC_PATH) {
+                        echo "💻 Local Laptop Sharing Mode Active!"
+                        echo "Source code is directly mounted to workspace: ${env.LOCAL_SRC_PATH}"
+                        echo "Skipping Git clone and protecting workspace from cleanWs()..."
+                        
+                        if (!fileExists('Jenkinsfile')) {
+                            error("❌ Workspace kosong! Pastikan abang sudah clone repo di folder host Windows.")
+                        } else {
+                            echo "✅ Local source code is ready to build."
                         }
+                        
                     } else {
-                        echo "🌐 Local directory variable not found or empty. Fetching from GitHub repository (Online Mode)..."
+                        echo "🌐 Server Mode Active. Fetching from GitHub repository..."
                         cleanWs()
                         
                         try {
