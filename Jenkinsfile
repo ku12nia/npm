@@ -237,81 +237,104 @@ pipeline {
             }
         }
 
-        stage('5. Trigger ArgoCD Sync (REST API)') {
+        stage('5. Trigger ArgoCD Sync CLI from Docker') {
             steps {
                 script {
                     def targetBranch = (params.DEPLOY_ENV == 'prod') ? 'main' : params.DEPLOY_ENV
                     def appName = "node-app-${params.DEPLOY_ENV}" 
                     def namespace = "${params.DEPLOY_ENV}-apps" 
-                    def argocdServer = "host.docker.internal:8081"
+                    def argocdServer = "host.docker.internal"
                     
                     withCredentials([usernamePassword(credentialsId: 'argocd-creds', passwordVariable: 'ARGOCD_PASS', usernameVariable: 'ARGOCD_USER')]) {
                         sh """
                             set +x
-                            echo "🔐 Authenticating to ArgoCD via REST API..."
+                            echo "🔐 Logging in to ArgoCD via CLI..."
+                            argocd login ${argocdServer} --username \$ARGOCD_USER --password \$ARGOCD_PASS --insecure
                             
-                            # 1. Get JWT Token from ArgoCD
-                            LOGIN_RES=\$(curl -s -k -X POST "http://${argocdServer}/api/v1/session" \
-                                -H "Content-Type: application/json" \
-                                -d "{\\\"username\\\": \\"\$ARGOCD_USER\\\", \\"password\\\": \\"\$ARGOCD_PASS\\\"}")
-                            
-                            # Extract token using simple grep/sed or python if available, but jq/grep works. Let's extract token value:
-                            TOKEN=\$(echo \$LOGIN_RES | grep -o '"token":"[^"]*"' | cut -d'"' -f4)
-                            
-                            if [ -z "\$TOKEN" ]; then
-                                echo "❌ Failed to obtain ArgoCD JWT token. Response: \$LOGIN_RES"
-                                exit 1
-                            fi
-                            echo "✅ Successfully authenticated!"
-
-                            # 2. Define Application JSON Payload for Upsert (Create/Update)
-                            read -r -d '' APP_PAYLOAD << EOM || true
-                            {
-                              "spec": {
-                                "source": {
-                                  "repoURL": "https://github.com/ku12nia/npm.git",
-                                  "path": "k8s/node-app-chart",
-                                  "targetRevision": "${targetBranch}",
-                                  "helm": {
-                                    "valueFiles": ["values.yaml"]
-                                  }
-                                },
-                                "destination": {
-                                  "server": "https://kubernetes.default.svc",
-                                  "namespace": "${namespace}"
-                                },
-                                "project": "default",
-                                "syncPolicy": {
-                                  "automated": {
-                                    "prune": true,
-                                    "selfHeal": true
-                                  }
-                                }
-                              }
-                            }
-EOM
-
-                            echo "🚀 Upserting ArgoCD application: ${appName}..."
-                            # Upsert application (PUT /api/v1/applications/{name}?upsert=true)
-                            curl -s -k -X PUT "http://${argocdServer}/api/v1/applications/${appName}?upsert=true" \
-                                -H "Authorization: Bearer \$TOKEN" \
-                                -H "Content-Type: application/json" \
-                                -d "\$APP_PAYLOAD"
-
-                            echo "🔄 Triggering sync for application: ${appName}..."
-                            # Trigger manual sync (POST /api/v1/applications/{name}/sync)
-                            curl -s -k -X POST "http://${argocdServer}/api/v1/applications/${appName}/sync" \
-                                -H "Authorization: Bearer \$TOKEN" \
-                                -H "Content-Type: application/json"
-
-                            echo "✨ ArgoCD synchronization successfully triggered via REST API for ${appName}!"
+                            echo "🚀 Syncing application: ${appName}..."
+                            argocd app sync ${appName}
                         """
                     }
+                    echo "🔄 App synchronization successful for ${appName}!"
                 }
             }
         }
 
-        // stage('5. Trigger Sync ArgoCD') {
+//         stage('5. Trigger ArgoCD Sync (REST API)') {
+//             steps {
+//                 script {
+//                     def targetBranch = (params.DEPLOY_ENV == 'prod') ? 'main' : params.DEPLOY_ENV
+//                     def appName = "node-app-${params.DEPLOY_ENV}" 
+//                     def namespace = "${params.DEPLOY_ENV}-apps" 
+//                     def argocdServer = "host.docker.internal"
+                    
+//                     withCredentials([usernamePassword(credentialsId: 'argocd-creds', passwordVariable: 'ARGOCD_PASS', usernameVariable: 'ARGOCD_USER')]) {
+//                         sh """
+//                             set +x
+//                             echo "🔐 Authenticating to ArgoCD via REST API..."
+                            
+//                             # 1. Get JWT Token from ArgoCD
+//                             LOGIN_RES=\$(curl -s -k -X POST "http://${argocdServer}/api/v1/session" \
+//                                 -H "Content-Type: application/json" \
+//                                 -d "{\\\"username\\\": \\"\$ARGOCD_USER\\\", \\"password\\\": \\"\$ARGOCD_PASS\\\"}")
+                            
+//                             # Extract token using simple grep/sed or python if available, but jq/grep works. Let's extract token value:
+//                             TOKEN=\$(echo \$LOGIN_RES | grep -o '"token":"[^"]*"' | cut -d'"' -f4)
+                            
+//                             if [ -z "\$TOKEN" ]; then
+//                                 echo "❌ Failed to obtain ArgoCD JWT token. Response: \$LOGIN_RES"
+//                                 exit 1
+//                             fi
+//                             echo "✅ Successfully authenticated!"
+
+//                             # 2. Define Application JSON Payload for Upsert (Create/Update)
+//                             read -r -d '' APP_PAYLOAD << EOM || true
+//                             {
+//                               "spec": {
+//                                 "source": {
+//                                   "repoURL": "https://github.com/ku12nia/npm.git",
+//                                   "path": "k8s/node-app-chart",
+//                                   "targetRevision": "${targetBranch}",
+//                                   "helm": {
+//                                     "valueFiles": ["values.yaml"]
+//                                   }
+//                                 },
+//                                 "destination": {
+//                                   "server": "https://kubernetes.default.svc",
+//                                   "namespace": "${namespace}"
+//                                 },
+//                                 "project": "default",
+//                                 "syncPolicy": {
+//                                   "automated": {
+//                                     "prune": true,
+//                                     "selfHeal": true
+//                                   }
+//                                 }
+//                               }
+//                             }
+// EOM
+
+//                             echo "🚀 Upserting ArgoCD application: ${appName}..."
+//                             # Upsert application (PUT /api/v1/applications/{name}?upsert=true)
+//                             curl -s -k -X PUT "http://${argocdServer}/api/v1/applications/${appName}?upsert=true" \
+//                                 -H "Authorization: Bearer \$TOKEN" \
+//                                 -H "Content-Type: application/json" \
+//                                 -d "\$APP_PAYLOAD"
+
+//                             echo "🔄 Triggering sync for application: ${appName}..."
+//                             # Trigger manual sync (POST /api/v1/applications/{name}/sync)
+//                             curl -s -k -X POST "http://${argocdServer}/api/v1/applications/${appName}/sync" \
+//                                 -H "Authorization: Bearer \$TOKEN" \
+//                                 -H "Content-Type: application/json"
+
+//                             echo "✨ ArgoCD synchronization successfully triggered via REST API for ${appName}!"
+//                         """
+//                     }
+//                 }
+//             }
+//         }
+
+        // stage('5. Trigger Sync ArgoCD CLI') {
         //     steps {
         //         script {
         //             sh 'curl -sSL -o argocd https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64 && chmod +x argocd'

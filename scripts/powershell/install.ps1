@@ -69,12 +69,42 @@ if ([string]::IsNullOrWhiteSpace($jenkinsPass)) {$jenkinsPass = "InitAdminPasswo
 Write-Host "`n==========================================================" -ForegroundColor Cyan
 Write-Host "2. Setup Argo CD on Kubernetes (K3s)" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
+
+# 1. Bersihkan sisa instalasi lama
 kubectl delete namespace argocd --ignore-not-found=true --force --grace-period=0
 kubectl create namespace argocd
+
+# 2. Install ArgoCD
 kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
-Write-Host "`nWaiting for Argo CD pods to become ready..." -ForegroundColor Magenta
+
+Write-Host "`nWaiting for Argo CD pods to become ready (ini butuh waktu beberapa menit)..." -ForegroundColor Magenta
 kubectl wait --for=condition=ready pod --all -n argocd --timeout=300s
 
+# 3. Kunci Password secara Permanen!
+$argocdPass = "1pESp9R32v29ic-8"
+Write-Host "`nMengunci password admin ArgoCD..." -ForegroundColor Green
+
+# Minta ArgoCD Server membuatkan Bcrypt Hash yang valid secara native
+$bcryptHash = kubectl exec -n argocd deploy/argocd-server -- argocd account bcrypt --password$argocdPass
+$bcryptHash =$bcryptHash.Trim()
+
+# Encode ke Base64 agar bisa disuntikkan ke K8s Secret
+$encodedHash = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($bcryptHash))$encodedMtime = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes((Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")))
+
+# Patch ArgoCD Secret dengan hash permanen
+$patchJson = "[{`"op`": `"replace`", `"path`": `"/data/admin.password`", `"value`": `"$encodedHash`"}, {`"op`": `"replace`", `"path`": `"/data/admin.passwordMtime`", `"value`": `"$encodedMtime`"}]"
+kubectl patch secret argocd-secret -n argocd --type='json' -p=$patchJson
+
+# Hapus initial secret agar ArgoCD tidak mereset ulang passwordnya
+kubectl delete secret argocd-initial-admin-secret -n argocd --ignore-not-found=true
+
+# Restart ArgoCD Server agar membaca password baru
+kubectl rollout restart deploy/argocd-server -n argocd
+kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=argocd-server -n argocd --timeout=120s
+
+Write-Host "[SUCCESS] Password ArgoCD berhasil dikunci mati menjadi: $argocdPass" -ForegroundColor Green
+
+# 4. Terapkan Aplikasi & Expose Service
 kubectl apply -f k8s/argocd-apps/node-app-prod.yaml
 kubectl patch svc argocd-server -n argocd -p '{\"spec\": {\"type\": \"LoadBalancer\"}}'
 
@@ -146,11 +176,26 @@ Write-Host "`n==========================================================" -Foreg
 Write-Host "7. Complete The Installation Process" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
 
-$encodedPass = kubectl get secret argocd-initial-admin-secret -n argocd -o jsonpath="{.data.password}"
+$argocdPass = "1pESp9R32v29ic-8"
+
+Write-Host "Menunggu ArgoCD Server siap untuk diset password-nya..." -ForegroundColor Green
+Start-Sleep -Seconds 10
+
+# Ambil password initial otomatis sebentar buat autentikasi internal
+$encodedPass = kubectl get secret argocd-initial-admin-secret -n argocd -o jsonpath="{.data.password}" 2>$null
 if ($encodedPass) {
-    $argocdPass = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($encodedPass))
-} else {
-    $argocdPass = "Failed to retrieve"
+    $tempPass = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($encodedPass))
+    
+    Write-Host "Mengubah password default menjadi password permanen..." -ForegroundColor Green
+    # Tembak langsung ke pod argocd-server untuk update password secara resmi
+    $podName = (kubectl get pods -n argocd -l app.kubernetes.io/name=argocd-server -o jsonpath="{.items[0].metadata.name}")
+    
+    if ($podName) {
+        # Login lokal di dalam pod lalu ganti password
+        kubectl exec -n argocd $podName -- argocd login localhost:8080 --username admin --password $tempPass --insecure 2>$null
+        kubectl exec -n argocd $podName -- argocd account update-password --new-password $argocdPass 2>$null
+        Write-Host "[SUCCESS] Password ArgoCD berhasil dipatenkan menjadi: $argocdPass" -ForegroundColor Green
+    }
 }
 
 $grafanaPass = ""
@@ -160,6 +205,7 @@ if ($encodedGrafana) {
 } else {
     $grafanaPass = "prom-operator" 
 }
+
 
 Write-Host "`n==========================================================" -ForegroundColor Green
 Write-Host "Done! Setup successful." -ForegroundColor Green
