@@ -12,7 +12,7 @@ deploymentName: node-app
 image:
   repository: ku12nia/nodejs
   pullPolicy: Always
-  tag: "69-prod"
+  tag: "70-prod"
 
 # ==========================================
 # 3. Networking: Service (Internal Access)
