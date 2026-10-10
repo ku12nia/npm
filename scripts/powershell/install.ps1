@@ -165,7 +165,7 @@ Write-Host "`n==========================================================" -Foreg
 Write-Host "Done! Setup successful." -ForegroundColor Green
 Write-Host "==========================================================" -ForegroundColor Green
 Write-Host "ACCESS YOUR SERVICES:"
-Write-Host " - Argo CD    : https://localhost (User: admin, Pass: $argocdPass)" -ForegroundColor Green
+Write-Host " - Argo CD    : https://localhost (User: admin, Pass: $argocdPass " -ForegroundColor Green
 Write-Host " - Jenkins    : http://localhost:8080"
 Write-Host "   InitAdmin  : $jenkinsPass (Login: jenkins / jenkins)" -ForegroundColor Green
 Write-Host " - Vault      : http://localhost:8200 (Token: root)" -ForegroundColor Green

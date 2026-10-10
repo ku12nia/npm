@@ -16,6 +16,8 @@ services:
     environment:
       - GIT_SSL_NO_VERIFY=true
       - LOCAL_SRC_PATH=${WORKSPACE_DIR}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
     networks:
       - devops-network
