@@ -12,7 +12,7 @@ deploymentName: node-app
 image:
   repository: ku12nia/nodejs
   pullPolicy: Always
-  tag: "27-prod" # will be automatically updated by Jenkins
+  tag: "66-prod"
 
 # ==========================================
 # 3. Networking: Service (Internal Access)
