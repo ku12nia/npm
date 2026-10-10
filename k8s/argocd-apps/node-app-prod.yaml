@@ -10,7 +10,8 @@ spec:
   source:
     repoURL: 'https://github.com/ku12nia/npm.git'
     targetRevision: main
-    path: k8s
+    #path: k8s
+    path: k8s/node-app-chart
   destination:
     server: 'https://kubernetes.default.svc'
     namespace: prod-apps
