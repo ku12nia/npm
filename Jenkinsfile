@@ -23,12 +23,12 @@ pipeline {
             steps {
                 script {
                     def targetBranch = (params.DEPLOY_ENV == 'prod') ? 'main' : params.DEPLOY_ENV
-                    def localSrcExists = fileExists('/var/jenkins_home/workspace/npm-cicd')
-
-                    if (localSrcExists) {
-                        echo "💻 Local mounted directory detected! Copying source code locally (Offline Mode)..."
+                    
+                    if (env.LOCAL_SRC_PATH && fileExists(env.LOCAL_SRC_PATH)) {
+                        echo "💻 Local mounted directory detected at ${env.LOCAL_SRC_PATH}! Copying source code locally (Offline Mode)..."
                         try {
-                            sh 'cp -r /var/jenkins_home/workspace/local-src/. .'
+                            cleanWs()
+                            sh "cp -a ${env.LOCAL_SRC_PATH}/. ."
                             echo "✅ Successfully loaded source code from local mount."
                         } catch (Exception e) {
                             echo "❌ Failed to copy local source code."
@@ -36,7 +36,7 @@ pipeline {
                             error("The pipeline was stopped because local file copying failed.")
                         }
                     } else {
-                        echo "🌐 Local directory not found. Fetching from GitHub repository (Online Mode)..."
+                        echo "🌐 Local directory variable not found or empty. Fetching from GitHub repository (Online Mode)..."
                         cleanWs()
                         
                         try {
@@ -56,7 +56,7 @@ pipeline {
                         } catch (Exception e) {
                             echo "❌ Failed to check out code from the branch: ${targetBranch}."
                             echo "Reason: ${e.getMessage()}"
-                            error("The pipeline was stopped because the repository checkout failed. Ensure that the 'github-creds' credentials are valid and the repository URL is correct.")
+                            error("The pipeline was stopped because the repository checkout failed.")
                         }
                     }
                 }

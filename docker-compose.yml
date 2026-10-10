@@ -1,5 +1,5 @@
 services:
-  # --- JENKINS ---
+# --- JENKINS ---
   jenkins:
     build: 
       context: .
@@ -12,9 +12,10 @@ services:
       - jenkins_home:/var/jenkins_home
       - /var/run/docker.sock:/var/run/docker.sock
       - ~/.kube:/var/jenkins_home/.kube:ro
-      - ${LOCAL_PROJECT_PATH}:/var/jenkins_home/workspace/npm-cicd
+      - ${LOCAL_PROJECT_PATH}:${WORKSPACE_DIR}
     environment:
       - GIT_SSL_NO_VERIFY=true
+      - LOCAL_SRC_PATH=${WORKSPACE_DIR}
     restart: unless-stopped
     networks:
       - devops-network
