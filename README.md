@@ -96,17 +96,10 @@ WORKSPACE_NAME="npm-cicd"
 WORKSPACE_DIR="/var/jenkins_home/workspace/$WORKSPACE_NAME"
 
 # The absolute path to your project folder on Host (Windows)
-LOCAL_PROJECT_PATH=C:/Users/evoel/Downloads/labs_dedi
+LOCAL_PROJECT_PATH=C:/[YOUR DIRECTORY]/labs_dedi
 ```
 
 ---
-
-- Docker Prune
-```bash
-docker prune -a
-docker volume ls
-docker images
-```
 
 ## 🚀 Step-by-Step Guide
 
@@ -131,37 +124,68 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 
 ## 🌐 Accessing Services
 
-Once the installation script completes, you can access the following dashboards and services:
+Once the installation script completes, all passwords and access details will be automatically printed in your terminal. You can access the following dashboards and services directly:
 
-* **Jenkins:** `http://localhost:8080` *(Run `docker logs jenkins-server` to retrieve the InitialPasswordAdmin).* Next, add credentials at http://localhost:8080/manage/credentials/ using the "Username with password" credential type, with the IDs `dockerhub-creds` and `github-creds`. For `github-creds`, create a new token (*classic* type) at [https://github.com/settings/tokens](https://github.com/settings/tokens), then update your password using that token. Ensure the "Lightweight checkout" option at http://localhost:8080/job/(yourpipeline)/configure is checked, And then make sure the Jenkinsfile directory matches the Script Path, for example ci/Jenkinsfile.
-* **PostgreSQL:** `localhost:5432` (Configured via your `.env` file.)
-* **pgAdmin:** `http://localhost:8081` (Configured via your `.env` file.)
-  > *Note: When registering a new server in pgAdmin, use `postgres` as the Hostname/Address.*
-* **ArgoCD Dashboard:** 
-  Open https://localhost -> If Not Working, Run the following port-forward command in a separate terminal:
-  ```bash
-  kubectl port-forward svc/argocd-server -n argocd 8082:443
-  ```
-  Then access `https://localhost:8082` (Accept self-signed certificate warning, login with username `admin`)
-  Encode the output of this command on Powershell
-  ```bash
-   [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($(kubectl get secret argocd-initial-admin-secret -n argocd -o jsonpath="{.data.password}")))
-  ```
-  If you using Bash
-  ```bash
-   kubectl get secret argocd-initial-admin-secret -n argocd -o jsonpath="{.data.password}" | base64 --decode
-  ```
-* **HashiCorp Vault (Dev Mode):**
-  Run: `kubectl port-forward svc/vault -n vault 8200:8200`
-  Then open `http://localhost:8200` (Login with Token: `root`)
-* **Grafana:**
-  Run: `kubectl port-forward svc/prometheus-stack-grafana -n monitoring 8083:80`
-  Then open `http://localhost:8083` (User: `admin`)
-* **Prometheus:**
-  Run: `kubectl port-forward svc/prometheus-stack-kube-prom-prometheus -n monitoring 9090:9090`
-  Then open `http://localhost:9090`
+- **Jenkins:** `http://localhost:8080` 
+  - *Note:* The `InitialAdminPassword` is automatically extracted and printed in the terminal at the end of the installation script.
+  - Next, add credentials at `http://localhost:8080/manage/credentials/` using the "Username with password" credential type, with the IDs `dockerhub-creds` and `github-creds`. For `github-creds`, create a new token (*classic* type) at [https://github.com/settings/tokens](https://github.com/settings/tokens), then update your password using that token. 
+  - Ensure the "Lightweight checkout" option at `http://localhost:8080/job/(yourpipeline)/configure` is checked, and make sure the Jenkinsfile directory matches the Script Path, for example `ci/Jenkinsfile`.
+- **PostgreSQL:** `localhost:5432` (Credentials configured via your `.env` file)
+- **MinIO:** `http://localhost:9001` (Credentials configured via your `.env` file)
+- **ActiveMQ Artemis:** `http://localhost:8161` (Credentials configured via your `.env` file)
+- **pgAdmin:** `http://localhost:8081` (Credentials configured via your `.env` file)
+  > *Important Note:* When registering the PostgreSQL server in pgAdmin, use `host.docker.internal` as the Hostname/Address, because pgAdmin runs inside Kubernetes while PostgreSQL runs in Docker Compose.
+- **ArgoCD Dashboard:** `https://localhost`
+  - Accept the self-signed certificate warning.
+  - Login with Username: `admin`
+  - Password: `1pESp9R32v29ic-8` (This password is permanently locked by the setup script).
+- **HashiCorp Vault (Dev Mode):** `http://localhost:8200` 
+  - Login with Token: `root`
+- **Grafana:** `http://localhost:8083` 
+  - Login with Username: `admin`
+  - *Note:* The password is automatically extracted and printed in the terminal at the end of the script (default is `prom-operator` if not fetched).
+- **Prometheus:** `http://localhost:9090`
 
 ---
+
+## 🛠 Troubleshooting & Maintenance
+
+### 1. Cleaning up Docker Resources
+Use the following commands to clean your system from unused containers, networks, and dangling images to keep your storage optimized:
+
+```bash
+# Remove all unused containers, networks, and images
+docker system prune -a
+
+# List all remaining volumes in the system
+docker volume ls
+
+# List all remaining images in the system
+docker images
+```
+
+### 2. Fixing DNS/Timeout Issues on Docker Desktop (Windows)
+If you experience network connection failures or timeouts (*exit code: 28*) when running the installation process or building images, this is often caused by a Windows DNS resolution bug in Docker Desktop. Follow these steps to set a static DNS:
+
+1. Open the **Docker Desktop** application.
+2. Click the gear icon (**Settings**) in the top right corner.
+3. Navigate to the **Docker Engine** menu on the left panel.
+4. Add static DNS configuration (e.g., Google and Cloudflare: `"dns": ["8.8.8.8", "1.1.1.1"]`) into the Docker daemon JSON settings.
+
+**Configuration Example:**
+```json
+{
+  "builder": {
+    "gc": {
+      "defaultKeepStorage": "20GB",
+      "enabled": true
+    }
+  },
+  "dns": ["8.8.8.8", "1.1.1.1"],
+  "experimental": false
+}
+```
+5. Click **Apply & restart** in the bottom right corner and wait a moment for the Docker Engine to restart.
 
 ## 🗑️ Uninstall & Cleanup
 
