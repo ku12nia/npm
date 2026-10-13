@@ -16,7 +16,8 @@ RUN mkdir -p /root/.docker/cli-plugins && \
     chmod +x /root/.docker/cli-plugins/docker-buildx
 
 # 3. Install Kubectl
-RUN curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" && \
+ARG KUBECTL_VERSION="v1.31.0"
+RUN curl --connect-timeout 10 --max-time 60 -fLO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl" && \
     chmod +x kubectl && \
     mv kubectl /usr/local/bin/
 
