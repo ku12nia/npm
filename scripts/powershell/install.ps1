@@ -133,15 +133,17 @@ $argocdPass = "1pESp9R32v29ic-8"
 Write-Host "`nMengunci password admin ArgoCD..." -ForegroundColor Green
 
 # Minta ArgoCD Server membuatkan Bcrypt Hash yang valid secara native
-$bcryptHash = kubectl exec -n argocd deploy/argocd-server -- argocd account bcrypt --password $argocdPass
+$bcryptHash = kubectl exec -n argocd deploy/argocd-server -- argocd account bcrypt --password$argocdPass
 $bcryptHash =$bcryptHash.Trim()
 
-$encodedHash = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($bcryptHash))
-$encodedMtime = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes((Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")))
+$encodedHash = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($bcryptHash))$encodedMtime = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes((Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")))
 
-# Patch ArgoCD Secret dengan hash permanen
-$patchJson = "[{`"op`": `"replace`", `"path`": `"/data/admin.password`", `"value`": `"$encodedHash`"}, {`"op`": `"replace`", `"path`": `"/data/admin.passwordMtime`", `"value`": `"$encodedMtime`"}]"
-kubectl patch secret argocd-secret -n argocd --type='json' -p=$patchJson
+# Patch ArgoCD Secret dengan hash permanen menggunakan file sementara (Bypass PowerShell parsing issue)
+$patchContent = "{ `"data`": { `"admin.password`": `"$encodedHash`", `"admin.passwordMtime`": `"$encodedMtime`" } }"
+$patchContent | Out-File -FilePath "argo-patch.json" -Encoding utf8
+
+kubectl patch secret argocd-secret -n argocd --type='merge' --patch-file argo-patch.json
+Remove-Item "argo-patch.json" -ErrorAction SilentlyContinue
 
 # Hapus initial secret agar ArgoCD tidak mereset ulang passwordnya
 kubectl delete secret argocd-initial-admin-secret -n argocd --ignore-not-found=true
@@ -154,7 +156,9 @@ Write-Host "[SUCCESS] Password ArgoCD berhasil dikunci mati menjadi: $argocdPass
 
 # 4. Terapkan Aplikasi & Expose Service
 kubectl apply -f k8s/argocd-apps/node-app-prod.yaml
-kubectl patch svc argocd-server -n argocd -p '{\"spec\": {\"type\": \"LoadBalancer\"}}'
+
+# Gunakan sintaks escape yang lebih aman di PowerShell untuk merubah Service ke LoadBalancer
+kubectl patch svc argocd-server -n argocd --type='merge' -p "{`"spec`": {`"type`": `"LoadBalancer`"}}"
 
 
 Write-Host "`n==========================================================" -ForegroundColor Cyan
