@@ -93,13 +93,59 @@ DOCKER_PASS=[COPY_YOUT_PAT_DOCKERHUB]
 
 # --- Jenkins Workspace ---
 WORKSPACE_NAME="npm-cicd"
-WORKSPACE_DIR="/var/jenkins_home/workspace/$WORKSPACE_NAME"
+WORKSPACE_DIR="/var/jenkins_home/workspace/npm-cicd"
 
 # The absolute path to your project folder on Host (Windows)
 LOCAL_PROJECT_PATH=C:/[YOUR DIRECTORY]/labs_dedi
 ```
 
 ---
+
+## 🛠 Git Version Control Guide
+Before committing your changes, ensure your local Git identity is correctly configured:
+
+```bash
+# Set your Git identity (use --global for system-wide or --local for this repository only)
+git config --global user.name "Dedi Mohammad Kurnia"
+git config --global user.email "kurniawan.noperfect@gmail.com"
+git status
+git add .
+git commit -m "your message"
+git push
+```
+
+Standard Commit & Push Workflow
+
+```bash
+git status
+git add .
+git commit -m "your message"
+git push
+```
+
+🚨 Handling Accidental Credentials Exposure
+
+If you accidentally commit sensitive data (such as API tokens or passwords) and your push gets blocked by GitHub Push Protection:
+- Remove or clean the secret from your file(s).
+- Reset your local commit history back to the remote state without losing your code changes:
+
+```bash
+git reset --soft origin/main
+```
+
+- Re-add and create a clean commit:
+
+```bash
+git add .
+git commit -m "preparation migrasi to vault (clean)"
+```
+
+- Push safely:
+
+```bash
+git add .
+git commit -m "preparation migrasi to vault (clean)"
+```
 
 ## 🚀 Step-by-Step Guide
 
