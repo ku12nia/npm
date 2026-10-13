@@ -1,4 +1,4 @@
-# 🚀 Node.js GitOps & Local DevOps Lab (App of Apps Pattern)
+# Node.js GitOps & Local DevOps Lab (App of Apps Pattern)
 
 ![Jenkins](https://img.shields.io/badge/Jenkins-CI-blue?logo=jenkins)
 ![ArgoCD](https://img.shields.io/badge/ArgoCD-CD-orange?logo=argo)
@@ -10,18 +10,27 @@
 ![Grafana](https://img.shields.io/badge/Grafana-Dashboard-F46800?logo=grafana)
 [![LinkedIn](https://img.shields.io/badge/Connect-LinkedIn-0A66C2?logo=linkedin)]([https://www.linkedin.com/in/dedimohammadkurnia/](https://www.linkedin.com/in/dedimohammadkurnia/))
 
-This repository provides a ready-to-use **Full-Stack Local DevOps & GitOps** ecosystem. It integrates a modern CI/CD pipeline using Jenkins, local database management (PostgreSQL + pgAdmin), HashiCorp Vault for secrets management, monitoring with Prometheus & Grafana, and automated deployments to Kubernetes using **ArgoCD** following the **App of Apps** pattern. The entire infrastructure is designed to run seamlessly on top of **Docker Desktop**.
+This repository provides a ready-to-use **Full-Stack Local DevOps & GitOps** ecosystem. It integrates a modern CI/CD pipeline using Jenkins, local database management (PostgreSQL + pgAdmin), HashiCorp Vault for secrets management, monitoring with Prometheus & Grafana, message brokering with ActiveMQ, object storage with MinIO, and automated deployments to Kubernetes using **ArgoCD** following the **App of Apps** pattern. The entire infrastructure is designed to run seamlessly on top of **Docker Desktop**.
 
 ---
 
 ## 🏗️ Architecture & Ecosystem
 
-This project applies the principle of **Separation of Concerns** through the following components:
+This project applies the principle of **Separation of Concerns**, splitting the infrastructure between core Docker Compose services and Kubernetes (K3s) deployments:
 
-1. **Local Infrastructure (Docker Compose):** Manages Jenkins (CI Server), PostgreSQL (Database), pgAdmin (Database Manager), Prometheus, and Grafana within an isolated container environment.
-2. **Jenkins (Continuous Integration):** Manages automated pipelines that handle source code checkout, testing, building Docker images for the Node.js application, pushing to Docker Hub, and updating Kubernetes manifests in the Git repository—all independently without direct interaction with the Kubernetes cluster.
-3. **ArgoCD (Continuous Deployment):** Acts as the primary GitOps controller. ArgoCD monitors the `k8s/` directory in Git. Whenever Jenkins updates the image tag, ArgoCD automatically detects the change and synchronizes it to your local Kubernetes cluster.
-4. **HashiCorp Vault & Monitoring Stack:** Injects dynamic secrets into the Node.js deployment via Vault Agent Injector and scrapes cluster metrics using Prometheus & Grafana.
+### 1. Core Services (Docker Compose)
+These components run directly on the Docker engine to provide stable base services:
+- **Jenkins (CI Server):** Manages automated pipelines that handle source code checkout, testing, building Docker images via embedded Buildx, pushing to Docker Hub, and updating Kubernetes manifests in the Git repository.
+- **PostgreSQL (Database):** Serves as the primary relational database system for the application workloads.
+- **MinIO (Object Storage):** Provides an S3-compatible local object storage for file uploads, backups, or artifact storage.
+
+### 2. Kubernetes Services (K3s via Docker Desktop)
+These components run inside the Kubernetes cluster to mimic production-grade orchestration:
+- **ArgoCD (Continuous Deployment):** Acts as the primary GitOps controller. Monitors the `k8s/` directory in Git and synchronizes manifest changes directly into the local Kubernetes cluster.
+- **pgAdmin (Database Manager):** Deployed via Helm to provide a web-based GUI for managing the PostgreSQL database (connected via `host.docker.internal`).
+- **ActiveMQ Artemis (Message Broker):** Deployed via native manifests to handle asynchronous messaging and queue management for microservices communication.
+- **HashiCorp Vault:** Manages sensitive credentials and injects dynamic secrets directly into the Node.js deployment pods via the Vault Agent Injector.
+- **Monitoring Stack (Prometheus & Grafana):** Deployed via `kube-prometheus-stack` Helm chart to automatically scrape cluster metrics, monitor pod health, and visualize system performance on customized dashboards.
 
 ---
 
@@ -35,17 +44,17 @@ This project applies the principle of **Separation of Concerns** through the fol
  ┃ ┣ 📜 postgres17-connect.json
  ┃ ┣ 📜 prometheus.yml
  ┃ ┗ 📜 pgadmin.json
- ┣ 📂 k8s                  <-- ☸️ Transformasi ke Helm Chart
+ ┣ 📂 k8s
  ┃ ┣ 📜 root-app.yaml      
  ┃ ┣ 📂 argocd-apps          
- ┃ ┃ ┗ 📜 node-app-prod.yaml # Direvisi untuk membaca Helm Chart
- ┃ ┗ 📂 node-app-chart       # 📦 Folder khusus Helm Chart Node.js
+ ┃ ┃ ┗ 📜 node-app-prod.yaml
+ ┃ ┗ 📂 node-app-chart
  ┃   ┣ 📂 templates          
- ┃   ┃ ┣ 📜 deployment.yaml  # Blueprint dinamis (termasuk Vault injector)
+ ┃   ┃ ┣ 📜 deployment.yaml
  ┃   ┃ ┣ 📜 service.yaml
  ┃   ┃ ┗ 📜 ingress.yaml
- ┃   ┣ 📜 Chart.yaml         # Metadata Chart
- ┃   ┗ 📜 values.yaml        # Pusat variabel (Image Tag, Port, Vault Config)
+ ┃   ┣ 📜 Chart.yaml
+ ┃   ┗ 📜 values.yaml
  ┣ 📂 scripts              
  ┃ ┣ 📂 bash
  ┃ ┃ ┣ 📜 install.sh
@@ -59,6 +68,18 @@ This project applies the principle of **Separation of Concerns** through the fol
  ┣ 📜 docker-compose.yml   
  ┗ 📜 Dockerfile.jenkins
 ```
+
+### Directory & File Definitions
+
+*   **`ci/`**: Contains the `Jenkinsfile` which defines the Continuous Integration pipeline. It automates the build, test, containerization, and registry push processes, as well as updating the image tag in the Git repository.
+*   **`config/`**: Holds static configuration files required for provisioning external services, including PostgreSQL connection setups, Prometheus scrape targets, and pgAdmin server configurations.
+*   **`k8s/`**: The core directory for Kubernetes orchestration and GitOps management.
+    *   **`root-app.yaml` & `argocd-apps/`**: Implements the ArgoCD App of Apps pattern to bootstrap and synchronize cluster resources automatically.
+    *   **`node-app-chart/`**: A custom Helm Chart for deploying the Node.js application. The `templates/` directory contains Kubernetes manifests (Deployment, Service, Ingress) with integrated HashiCorp Vault Agent Injector annotations, while `values.yaml` acts as the central configuration for dynamic variables (e.g., image tags, ports).
+*   **`scripts/`**: Provides automation scripts in Bash (Linux/macOS) and PowerShell (Windows) for seamless environment setup (`install`) and teardown (`uninstall`).
+*   **`src/`**: The application source code directory, including the `Dockerfile` used by Jenkins to containerize the Node.js application.
+*   **`docker-compose.yml`**: The foundation for the local infrastructure. It defines and orchestrates the core services running outside of Kubernetes, such as Jenkins, PostgreSQL, and MinIO.
+*   **`Dockerfile.jenkins`**: A custom Docker image definition for Jenkins, pre-configured with essential DevOps CLI tools including Docker, Buildx, Kubectl, and ArgoCD CLI to enable seamless pipeline execution.
 
 ---
 
@@ -109,9 +130,6 @@ Before committing your changes, ensure your local Git identity is correctly conf
 git config --global user.name "Dedi Mohammad Kurnia"
 git config --global user.email "kurniawan.noperfect@gmail.com"
 git status
-git add .
-git commit -m "your message"
-git push
 ```
 
 Standard Commit & Push Workflow
