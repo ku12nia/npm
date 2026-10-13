@@ -84,16 +84,29 @@ MINIO_ROOT_PASSWORD=minioadmin
 ARTEMIS_USER=admin
 ARTEMIS_PASSWORD=artemisadmin
 
+# --- Docker Hub Credentials ---
+DOCKER_USER=ku12nia
+DOCKER_PASS=[COPY_YOUT_PAT_DOCKERHUB]
+
+# --- Hashicorp Vault ---
+#Method -> Token = root
+
 # --- Jenkins Workspace ---
 WORKSPACE_NAME="npm-cicd"
 WORKSPACE_DIR="/var/jenkins_home/workspace/$WORKSPACE_NAME"
 
-# --- Docker Hub Credentials ---
-DOCKER_USER=ku12nia
-DOCKER_PASS=[COPY_YOUT_PAT_DOCKERHUB]
+# The absolute path to your project folder on Host (Windows)
+LOCAL_PROJECT_PATH=C:/Users/evoel/Downloads/labs_dedi
 ```
 
 ---
+
+- Docker Prune
+```bash
+docker prune -a
+docker volume ls
+docker images
+```
 
 ## 🚀 Step-by-Step Guide
 

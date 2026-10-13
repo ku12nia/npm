@@ -85,11 +85,11 @@ $argocdPass = "1pESp9R32v29ic-8"
 Write-Host "`nMengunci password admin ArgoCD..." -ForegroundColor Green
 
 # Minta ArgoCD Server membuatkan Bcrypt Hash yang valid secara native
-$bcryptHash = kubectl exec -n argocd deploy/argocd-server -- argocd account bcrypt --password$argocdPass
+$bcryptHash = kubectl exec -n argocd deploy/argocd-server -- argocd account bcrypt --password $argocdPass
 $bcryptHash =$bcryptHash.Trim()
 
-# Encode ke Base64 agar bisa disuntikkan ke K8s Secret
-$encodedHash = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($bcryptHash))$encodedMtime = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes((Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")))
+$encodedHash = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($bcryptHash))
+$encodedMtime = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes((Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")))
 
 # Patch ArgoCD Secret dengan hash permanen
 $patchJson = "[{`"op`": `"replace`", `"path`": `"/data/admin.password`", `"value`": `"$encodedHash`"}, {`"op`": `"replace`", `"path`": `"/data/admin.passwordMtime`", `"value`": `"$encodedMtime`"}]"
