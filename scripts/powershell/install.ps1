@@ -17,6 +17,54 @@ if (Test-Path ".env") {
     exit
 }
 
+
+# Write-Host "`n==========================================================" -ForegroundColor Cyan
+# Write-Host "🔐 Migrasi .env ke HashiCorp Vault (KV Engine)" -ForegroundColor Yellow
+# Write-Host "==========================================================" -ForegroundColor Cyan
+
+# # Konfigurasi Vault Dev Mode
+# $VaultAddress = "http://localhost:8200"
+# $VaultToken = "root"
+
+# $Headers = @{
+#     "X-Vault-Token" = $VaultToken
+#     "Content-Type"  = "application/json"
+# }
+
+# # Mapping data credentials Anda
+# $SecretData = @{
+#     data = @{
+#         POSTGRES_PASSWORD   = "pg-local"
+#         PGADMIN_EMAIL       = "dedimk.devops@gmail.com"
+#         PGADMIN_PASSWORD    = "pgadmin-local"
+#         MINIO_ROOT_USER     = "admin"
+#         MINIO_ROOT_PASSWORD = "minioadmin"
+#         ARTEMIS_USER        = "admin"
+#         ARTEMIS_PASSWORD    = "artemisadmin"
+#         DOCKER_USER         = "ku12nia"
+#         DOCKER_PASS         = "[COPY_YOUT_PAT_DOCKERHUB]"
+#     }
+# }
+
+# # Convert ke JSON
+# $JsonPayload = $SecretData | ConvertTo-Json -Depth 5
+
+# Write-Host "Mencoba injeksi kredensial ke Vault REST API..." -ForegroundColor Cyan
+
+# try {
+#     # Path 'secret/data/devops-env' adalah path default KV v2 engine pada dev mode
+#     $Response = Invoke-RestMethod -Uri "$VaultAddress/v1/secret/data/devops-env" `
+#                                   -Method Post `
+#                                   -Headers $Headers `
+#                                   -Body $JsonPayload
+
+#     Write-Host "✅ Kredensial berhasil disimpan di HashiCorp Vault!" -ForegroundColor Green
+#     Write-Host "📂 Path Vault: secret/devops-env" -ForegroundColor Green
+# } catch {
+#     Write-Host "❌ Gagal menyimpan ke Vault. Pastikan pod Vault sudah 'Running' dan Service terbuka di port 8200." -ForegroundColor Red
+#     Write-Host $_.Exception.Message
+# }
+
 $WorkspaceName = if ($env:WORKSPACE_NAME) { $env:WORKSPACE_NAME } else { "npm-cicd" }
 $WorkspaceDir = "/var/jenkins_home/workspace/$WorkspaceName"
 
