@@ -81,6 +81,7 @@ if (-not (Get-Command helm -ErrorAction SilentlyContinue)) {
     Write-Host "✅ Helm is already installed." -ForegroundColor Green
 }
 
+
 Write-Host "`n==========================================================" -ForegroundColor Cyan
 Write-Host "1. Running Jenkins, PostgreSQL, and MinIO (Docker Compose)" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
@@ -114,6 +115,7 @@ if ($jenkinsId) {$rawPass = docker exec $jenkinsId cat /var/jenkins_home/secrets
 if ([string]::IsNullOrWhiteSpace($jenkinsPass)) {$jenkinsPass = "InitAdminPassword has been performed; please log in using the credentials registered in Jenkins."
 }
 
+
 Write-Host "`n==========================================================" -ForegroundColor Cyan
 Write-Host "2. Setup Argo CD on Kubernetes (K3s)" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
@@ -142,65 +144,11 @@ kubectl rollout restart deploy/argocd-server -n argocd
 kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=argocd-server -n argocd --timeout=120s
 
 Write-Host "[SUCCESS] Password ArgoCD berhasil dikunci mati menjadi: $argocdPass" -ForegroundColor Green
-kubectl apply -f k8s/argocd/argocd.yaml
-
-Write-Host "`n==========================================================" -ForegroundColor Cyan
-Write-Host "3. Setup Nginx Ingress Controller (Core Networking)" -ForegroundColor Yellow
-Write-Host "==========================================================" -ForegroundColor Cyan
-helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
-helm repo update
-helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx `
-    --namespace ingress-nginx `
-    --create-namespace `
-    --set controller.service.type=LoadBalancer
-
-# helm repo add cilium https://helm.cilium.io/
-# helm install cilium cilium/cilium --version 1.14.0 --namespace kube-system --set ingressController.enabled=true --set ingressController.default=true
-
-Write-Host "`n==========================================================" -ForegroundColor Cyan
-Write-Host "4. Setup PGAdmin on Kubernetes (K3s via Helm)" -ForegroundColor Yellow
-Write-Host "==========================================================" -ForegroundColor Cyan
-helm repo add runix https://helm.runix.net
-helm repo update
-
-helm upgrade --install pgadmin runix/pgadmin4 -n default `
-    --set env.email="$env:PGADMIN_EMAIL" `
-    --set env.password="$env:PGADMIN_PASSWORD" `
-    --set service.type=LoadBalancer `
-    --set service.port=8081
+kubectl apply -f k8s/argocd.yaml
 
 
 Write-Host "`n==========================================================" -ForegroundColor Cyan
-Write-Host "5. Setup Prometheus & Grafana on Kubernetes (K3s via Helm)" -ForegroundColor Yellow
-Write-Host "==========================================================" -ForegroundColor Cyan
-kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
-helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-helm repo update
-
-helm upgrade --install prometheus-stack prometheus-community/kube-prometheus-stack -n monitoring `
-    --set grafana.service.type=LoadBalancer `
-    --set grafana.service.port=8083 `
-    --set prometheus.service.type=LoadBalancer `
-    --set prometheus.service.port=9090
-
-
-Write-Host "`n==========================================================" -ForegroundColor Cyan
-Write-Host "6. Setup HashiCorp Vault on Kubernetes (K3s via Helm)" -ForegroundColor Yellow
-Write-Host "==========================================================" -ForegroundColor Cyan
-kubectl create namespace vault --dry-run=client -o yaml | kubectl apply -f -
-helm repo add hashicorp https://helm.releases.hashicorp.com
-helm repo update
-
-helm upgrade --install vault hashicorp/vault -n vault `
-    --set "server.dev.enabled=true" `
-    --set "injector.enabled=true" `
-    --set "ui.enabled=true" `
-    --set "ui.serviceType=LoadBalancer" `
-    --set "ui.externalPort=8200"
-
-
-Write-Host "`n==========================================================" -ForegroundColor Cyan
-Write-Host "7. Setup ActiveMQ Artemis on Kubernetes (K3s via Manifest)" -ForegroundColor Yellow
+Write-Host "3. Setup ActiveMQ Artemis on Kubernetes (K3s via Manifest)" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
 Write-Host "Creating 'artemis' namespace..." -ForegroundColor Cyan
 kubectl create namespace artemis --dry-run=client -o yaml | kubectl apply -f -
@@ -220,6 +168,62 @@ kubectl wait --for=condition=ready pod --all -n monitoring --timeout=300s
 kubectl wait --for=condition=ready pod --all -n vault --timeout=300s
 kubectl wait --for=condition=ready pod --all -n artemis --timeout=300s
 
+
+Write-Host "`n==========================================================" -ForegroundColor Cyan
+Write-Host "4. Setup Nginx Ingress Controller (Core Networking)" -ForegroundColor Yellow
+Write-Host "==========================================================" -ForegroundColor Cyan
+helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+helm repo update
+helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx `
+    --namespace ingress-nginx `
+    --create-namespace `
+    --set controller.service.type=LoadBalancer
+
+# helm repo add cilium https://helm.cilium.io/
+# helm install cilium cilium/cilium --version 1.14.0 --namespace kube-system --set ingressController.enabled=true --set ingressController.default=true
+
+Write-Host "`n==========================================================" -ForegroundColor Cyan
+Write-Host "5. Setup PGAdmin on Kubernetes (K3s via Helm)" -ForegroundColor Yellow
+Write-Host "==========================================================" -ForegroundColor Cyan
+helm repo add runix https://helm.runix.net
+helm repo update
+
+helm upgrade --install pgadmin runix/pgadmin4 -n default `
+    --set env.email="$env:PGADMIN_EMAIL" `
+    --set env.password="$env:PGADMIN_PASSWORD" `
+    --set service.type=LoadBalancer `
+    --set service.port=8081
+
+
+Write-Host "`n==========================================================" -ForegroundColor Cyan
+Write-Host "6. Setup Prometheus & Grafana on Kubernetes (K3s via Helm)" -ForegroundColor Yellow
+Write-Host "==========================================================" -ForegroundColor Cyan
+kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm repo update
+
+helm upgrade --install prometheus-stack prometheus-community/kube-prometheus-stack -n monitoring `
+    --set grafana.service.type=LoadBalancer `
+    --set grafana.service.port=8083 `
+    --set prometheus.service.type=LoadBalancer `
+    --set prometheus.service.port=9090
+
+
+Write-Host "`n==========================================================" -ForegroundColor Cyan
+Write-Host "7. Setup HashiCorp Vault on Kubernetes (K3s via Helm)" -ForegroundColor Yellow
+Write-Host "==========================================================" -ForegroundColor Cyan
+kubectl create namespace vault --dry-run=client -o yaml | kubectl apply -f -
+helm repo add hashicorp https://helm.releases.hashicorp.com
+helm repo update
+
+helm upgrade --install vault hashicorp/vault -n vault `
+    --set "server.dev.enabled=true" `
+    --set "injector.enabled=true" `
+    --set "ui.enabled=true" `
+    --set "ui.serviceType=LoadBalancer" `
+    --set "ui.externalPort=8200"
+
+
 Write-Host "`n==========================================================" -ForegroundColor Cyan
 Write-Host "8. Complete The Installation Process" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
@@ -236,14 +240,14 @@ Write-Host "`n==========================================================" -Foreg
 Write-Host "Done! Setup successful." -ForegroundColor Green
 Write-Host "==========================================================" -ForegroundColor Green
 Write-Host "ACCESS YOUR SERVICES:"
-Write-Host " - Argo CD    : https://localhost (User: admin, Pass: $argocdPass " -ForegroundColor Green
+Write-Host " - Vault      : http://localhost:8200 (Token: root)" -ForegroundColor Green
 Write-Host " - Jenkins    : http://localhost:8080"
 Write-Host "   InitAdmin  : $jenkinsPass (Login: jenkins / jenkins)" -ForegroundColor Green
-Write-Host " - Vault      : http://localhost:8200 (Token: root)" -ForegroundColor Green
+Write-Host " - Argo CD    : https://localhost (User: admin, Pass: $argocdPass " -ForegroundColor Green
+Write-Host " - Artemis    : http://localhost:8161 (User: $($env:ARTEMIS_USER), Pass: $($env:ARTEMIS_PASSWORD))" -ForegroundColor Green
 Write-Host " - Grafana    : http://localhost:8083 (User: admin, Pass: $grafanaPass)" -ForegroundColor Green
 Write-Host " - Prometheus : http://localhost:9090" -ForegroundColor Green
 Write-Host " - PGAdmin    : http://localhost:8081 (User: $($env:PGADMIN_EMAIL), Pass: $($env:PGADMIN_PASSWORD))"
 Write-Host " - PostgreSQL : localhost:5432 (User: postgres, Pass: $($env:POSTGRES_PASSWORD))"
 Write-Host " - MinIO      : http://localhost:9001 (User: $($env:MINIO_ROOT_USER), Pass: $($env:MINIO_ROOT_PASSWORD))" -ForegroundColor Green
-Write-Host " - Artemis    : http://localhost:8161 (User: $($env:ARTEMIS_USER), Pass: $($env:ARTEMIS_PASSWORD))" -ForegroundColor Green
 Write-Host "==========================================================" -ForegroundColor Green
