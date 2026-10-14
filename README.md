@@ -117,7 +117,7 @@ WORKSPACE_NAME=npm-cicd
 WORKSPACE_DIR=/var/jenkins_home/workspace/npm-cicd
 
 # The absolute path to your project folder on Host (Windows)
-LOCAL_PROJECT_PATH=C:/Users/evoel/Downloads/labs_dedi
+LOCAL_PROJECT_PATH=C:/Users/evoel/Downloads/labs_dedi/npm
 ```
 
 ---
