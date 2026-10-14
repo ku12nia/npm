@@ -1,4 +1,4 @@
-Write-Host "==========================================================" -ForegroundColor Cyan
+﻿Write-Host "==========================================================" -ForegroundColor Cyan
 Write-Host "0. Prerequisite & Environment Setup" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
 
@@ -71,7 +71,7 @@ if ([string]::IsNullOrWhiteSpace($jenkinsPass)) {$jenkinsPass = "InitAdminPasswo
 Write-Host "`n==========================================================" -ForegroundColor Cyan
 Write-Host "2. Setup Argo CD on Kubernetes (K3s)" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
-kubectl delete namespace argocd --ignore-not-found=true --force --grace-period=0
+# kubectl delete namespace argocd --ignore-not-found=true --force --grace-period=0
 kubectl create namespace argocd
 kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
 
@@ -189,17 +189,13 @@ if ($encodedGrafana) {
     $grafanaPass = "prom-operator" 
 }
 
-Write-Host "`nWaiting for K3s pods to become ready (this may take a few minutes)..." -ForegroundColor Magenta
-Start-Sleep -Seconds 15
-kubectl wait --for=condition=ready pod --all -n monitoring --timeout=300s
-kubectl wait --for=condition=ready pod --all -n vault --timeout=300s
-kubectl wait --for=condition=ready pod --all -n artemis --timeout=300s
 
 Write-Host "`n==========================================================" -ForegroundColor Cyan
 Write-Host "🔐 Migrasi .env ke HashiCorp Vault (KV Engine)" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
 
-# Konfigurasi Vault Dev Mode
+Start-Sleep -Seconds 5
+
 $VaultAddress = "http://localhost:8200"
 $VaultToken = "root"
 
@@ -208,51 +204,68 @@ $Headers = @{
     "Content-Type"  = "application/json"
 }
 
-$SecretData = @{
+$SecretPayload = @{
     data = @{
-        POSTGRES_PASSWORD   = $env:POSTGRES_PASSWORD
-        PGADMIN_EMAIL       = $env:PGADMIN_EMAIL
-        PGADMIN_PASSWORD    = $env:PGADMIN_PASSWORD
-        MINIO_ROOT_USER     = $env:MINIO_ROOT_USER
-        MINIO_ROOT_PASSWORD = $env:MINIO_ROOT_PASSWORD
-        ARTEMIS_USER        = $env:ARTEMIS_USER
-        ARTEMIS_PASSWORD    = $env:ARTEMIS_PASSWORD
-        DOCKER_USER         = $env:DOCKER_USER
-        DOCKER_PASS         = $env:DOCKER_PASS
+        POSTGRES_PASSWORD   = "$env:POSTGRES_PASSWORD"
+        PGADMIN_EMAIL       = "$env:PGADMIN_EMAIL"
+        PGADMIN_PASSWORD    = "$env:PGADMIN_PASSWORD"
+        MINIO_ROOT_USER     = "$env:MINIO_ROOT_USER"
+        MINIO_ROOT_PASSWORD = "$env:MINIO_ROOT_PASSWORD"
+        ARTEMIS_USER        = "$env:ARTEMIS_USER"
+        ARTEMIS_PASSWORD    = "$env:ARTEMIS_PASSWORD"
+        DOCKER_USER         = "$env:DOCKER_USER"
+        DOCKER_PASS         = "$env:DOCKER_PASS"
     }
 }
 
-# Convert ke JSON
-$JsonPayload = $SecretData | ConvertTo-Json -Depth 5
+$JsonPayload = $SecretPayload | ConvertTo-Json -Depth 10 -Compress
 
 Write-Host "Mencoba injeksi kredensial ke Vault REST API..." -ForegroundColor Cyan
 
 try {
-    # Path 'secret/data/devops-env' adalah path default KV v2 engine pada dev mode
-    $Response = Invoke-RestMethod -Uri "$VaultAddress/v1/secret/data/devops-env" `
-                                  -Method Post `
-                                  -Headers $Headers `
-                                  -Body $JsonPayload
-
-    Write-Host "✅ Kredensial berhasil disimpan di HashiCorp Vault!" -ForegroundColor Green
-    Write-Host "📂 Path Vault: secret/devops-env" -ForegroundColor Green
+    $VaultParams = @{
+        Uri     = "$VaultAddress/v1/secret/data/devops-env"
+        Method  = "Post"
+        Headers = $Headers
+        Body    = $JsonPayload
+    }
+    
+    $Response = Invoke-RestMethod @VaultParams
+    Write-Host "✅ Kredensial berhasil disimpan di Vault!" -ForegroundColor Green
 } catch {
-    Write-Host "❌ Gagal menyimpan ke Vault. Pastikan pod Vault sudah 'Running' dan Service terbuka di port 8200." -ForegroundColor Red
-    Write-Host $_.Exception.Message
+    Write-Host "⚠️ Peringatan: Gagal menyimpan otomatis ke Vault, namun instalasi utama tetap aman." -ForegroundColor Yellow
+    Write-Host "Detail Error: $($_.Exception.Message)" -ForegroundColor Red
 }
 
 Write-Host "`n==========================================================" -ForegroundColor Green
 Write-Host "Done! Setup successful." -ForegroundColor Green
 Write-Host "==========================================================" -ForegroundColor Green
+
+
+Write-Host "`n==========================================================" -ForegroundColor Green
+Write-Host "Done! Setup successful." -ForegroundColor Green
+Write-Host "==========================================================" -ForegroundColor Green
 Write-Host "ACCESS YOUR SERVICES:"
-Write-Host " - Vault      : http://localhost:8200 (Token: root)" -ForegroundColor Green
 Write-Host " - Jenkins    : http://localhost:8080"
 Write-Host "   InitAdmin  : $jenkinsPass (Login: jenkins / jenkins)" -ForegroundColor Green
-Write-Host " - Argo CD    : https://localhost (User: admin, Pass: $argocdPass " -ForegroundColor Green
+Write-Host " - Argo CD    : https://localhost (User: admin, Pass: $argocdPass)" -ForegroundColor Green
 Write-Host " - Artemis    : http://localhost:8161 (User: $($env:ARTEMIS_USER), Pass: $($env:ARTEMIS_PASSWORD))" -ForegroundColor Green
 Write-Host " - Grafana    : http://localhost:8083 (User: admin, Pass: $grafanaPass)" -ForegroundColor Green
 Write-Host " - Prometheus : http://localhost:9090" -ForegroundColor Green
 Write-Host " - PGAdmin    : http://localhost:8081 (User: $($env:PGADMIN_EMAIL), Pass: $($env:PGADMIN_PASSWORD))"
 Write-Host " - PostgreSQL : localhost:5432 (User: postgres, Pass: $($env:POSTGRES_PASSWORD))"
 Write-Host " - MinIO      : http://localhost:9001 (User: $($env:MINIO_ROOT_USER), Pass: $($env:MINIO_ROOT_PASSWORD))" -ForegroundColor Green
+Write-Host " - Vault      : http://localhost:8200 (Token: root)" -ForegroundColor Green
 Write-Host "==========================================================" -ForegroundColor Green
+
+# CEK ERROR
+# $lines = Get-Content .\scripts\powershell\install.ps1
+# for ($i = 0; $i -lt $lines.Count; $i++) {
+#     $lineNum = $i + 1
+#     $lineText = $lines[$i]
+#     $quoteCount = ($lineText.Split('"').Count - 1)
+#     if ($quoteCount % 2 -ne 0) {
+#         Write-Host "🚨 Kutip ganjil ($quoteCount buah) di Baris $lineNum: $lineText" -ForegroundColor Red
+#     }
+# }
+# GANTI UTF-8 with BOM
