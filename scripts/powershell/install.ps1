@@ -129,17 +129,16 @@ Write-Host "`nWaiting for Argo CD pods to become ready (ini butuh waktu beberapa
 kubectl wait --for=condition=ready pod --all -n argocd --timeout=300s
 
 # 3. Kunci Password secara Permanen!
-$argocdPass = "1pESp9R32v29ic-8"
+$argocdPass = "P4ssw0rdArgoCD"
 Write-Host "`nMengunci password admin ArgoCD..." -ForegroundColor Green
 
-# Minta ArgoCD Server membuatkan Bcrypt Hash yang valid secara native
+# Minta ArgoCD Server membuatkan Bcrypt Hash yang valid secara native (SUDAH DIPERBAIKI SPASINYA)
 $bcryptHash = kubectl exec -n argocd deploy/argocd-server -- argocd account bcrypt --password$argocdPass
 $bcryptHash =$bcryptHash.Trim()
 
-$encodedHash = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($bcryptHash))
-$encodedMtime = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes((Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")))
+$encodedHash = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($bcryptHash))$encodedMtime = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes((Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")))
 
-# Patch ArgoCD Secret dengan hash permanen menggunakan file sementara (Bypass PowerShell parsing issue)
+# Patch ArgoCD Secret dengan hash permanen menggunakan file sementara
 $patchContent = "{ `"data`": { `"admin.password`": `"$encodedHash`", `"admin.passwordMtime`": `"$encodedMtime`" } }"
 $patchContent | Out-File -FilePath "argo-patch.json" -Encoding utf8
 
@@ -228,28 +227,6 @@ kubectl wait --for=condition=ready pod --all -n artemis --timeout=300s
 Write-Host "`n==========================================================" -ForegroundColor Cyan
 Write-Host "7. Complete The Installation Process" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
-
-$argocdPass = "1pESp9R32v29ic-8"
-
-Write-Host "Menunggu ArgoCD Server siap untuk diset password-nya..." -ForegroundColor Green
-Start-Sleep -Seconds 10
-
-# Ambil password initial otomatis sebentar buat autentikasi internal
-$encodedPass = kubectl get secret argocd-initial-admin-secret -n argocd -o jsonpath="{.data.password}" 2>$null
-if ($encodedPass) {
-    $tempPass = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($encodedPass))
-    
-    Write-Host "Mengubah password default menjadi password permanen..." -ForegroundColor Green
-    # Tembak langsung ke pod argocd-server untuk update password secara resmi
-    $podName = (kubectl get pods -n argocd -l app.kubernetes.io/name=argocd-server -o jsonpath="{.items[0].metadata.name}")
-    
-    if ($podName) {
-        # Login lokal di dalam pod lalu ganti password
-        kubectl exec -n argocd $podName -- argocd login localhost:8080 --username admin --password $tempPass --insecure 2>$null
-        kubectl exec -n argocd $podName -- argocd account update-password --new-password $argocdPass 2>$null
-        Write-Host "[SUCCESS] Password ArgoCD berhasil dipatenkan menjadi: $argocdPass" -ForegroundColor Green
-    }
-}
 
 $grafanaPass = ""
 $encodedGrafana = kubectl get secret prometheus-stack-grafana -n monitoring -o jsonpath="{.data.admin-password}" 2>$null
