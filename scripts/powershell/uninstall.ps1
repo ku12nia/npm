@@ -2,18 +2,25 @@ Write-Host "==========================================================" -Foregro
 Write-Host "🗑️ 1. Removing Argo CD from Kubernetes" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
 
-Write-Host "Cleaning up Applications and Projects (to avoid stuck namespaces)..."
-kubectl delete applications --all -n argocd --ignore-not-found=true
-kubectl delete appprojects --all -n argocd --ignore-not-found=true
+Write-Host "Cleaning up Applications and Projects..."
+kubectl delete applications --all -n argocd --ignore-not-found=true --force --grace-period=0
+kubectl delete appprojects --all -n argocd --ignore-not-found=true --force --grace-period=0
+
+Write-Host "Removing finalizers from Argo CD applications..."
+kubectl get applications.argoproj.io -n argocd -o json 2>$null | ForEach-Object {
+    $_.metadata.finalizers = $null
+    $_ | kubectl replace -f - 2>$null
+}
 
 Write-Host "Deleting all Argo CD installation resources..."
-kubectl delete -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml --ignore-not-found=true
+kubectl delete -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml --ignore-not-found=true --force --grace-period=0
 
 Write-Host "Deleting namespace argocd..."
-kubectl delete namespace argocd --ignore-not-found=true
+kubectl delete namespace argocd --ignore-not-found=true --force --grace-period=0
+kubectl patch namespace argocd --type=json -p='[{"op": "remove", "path": "/metadata/finalizers"}]' 2>$null
 
 Write-Host "Deleting remaining Custom Resource Definitions (CRD)..."
-kubectl delete crd applications.argoproj.io applicationsets.argoproj.io appprojects.argoproj.io applicationsyncwindows.argoproj.io --ignore-not-found=true
+kubectl delete crd applications.argoproj.io applicationsets.argoproj.io appprojects.argoproj.io applicationsyncwindows.argoproj.io --ignore-not-found=true --force --grace-period=0
 
 Write-Host "`n==========================================================" -ForegroundColor Cyan
 Write-Host "🗑️ 2. Removing Prometheus & Grafana (Monitoring Stack)" -ForegroundColor Yellow

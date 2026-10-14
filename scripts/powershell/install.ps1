@@ -17,54 +17,6 @@ if (Test-Path ".env") {
     exit
 }
 
-
-# Write-Host "`n==========================================================" -ForegroundColor Cyan
-# Write-Host "🔐 Migrasi .env ke HashiCorp Vault (KV Engine)" -ForegroundColor Yellow
-# Write-Host "==========================================================" -ForegroundColor Cyan
-
-# # Konfigurasi Vault Dev Mode
-# $VaultAddress = "http://localhost:8200"
-# $VaultToken = "root"
-
-# $Headers = @{
-#     "X-Vault-Token" = $VaultToken
-#     "Content-Type"  = "application/json"
-# }
-
-# # Mapping data credentials Anda
-# $SecretData = @{
-#     data = @{
-#         POSTGRES_PASSWORD   = "pg-local"
-#         PGADMIN_EMAIL       = "dedimk.devops@gmail.com"
-#         PGADMIN_PASSWORD    = "pgadmin-local"
-#         MINIO_ROOT_USER     = "admin"
-#         MINIO_ROOT_PASSWORD = "minioadmin"
-#         ARTEMIS_USER        = "admin"
-#         ARTEMIS_PASSWORD    = "artemisadmin"
-#         DOCKER_USER         = "ku12nia"
-#         DOCKER_PASS         = "[COPY_YOUT_PAT_DOCKERHUB]"
-#     }
-# }
-
-# # Convert ke JSON
-# $JsonPayload = $SecretData | ConvertTo-Json -Depth 5
-
-# Write-Host "Mencoba injeksi kredensial ke Vault REST API..." -ForegroundColor Cyan
-
-# try {
-#     # Path 'secret/data/devops-env' adalah path default KV v2 engine pada dev mode
-#     $Response = Invoke-RestMethod -Uri "$VaultAddress/v1/secret/data/devops-env" `
-#                                   -Method Post `
-#                                   -Headers $Headers `
-#                                   -Body $JsonPayload
-
-#     Write-Host "✅ Kredensial berhasil disimpan di HashiCorp Vault!" -ForegroundColor Green
-#     Write-Host "📂 Path Vault: secret/devops-env" -ForegroundColor Green
-# } catch {
-#     Write-Host "❌ Gagal menyimpan ke Vault. Pastikan pod Vault sudah 'Running' dan Service terbuka di port 8200." -ForegroundColor Red
-#     Write-Host $_.Exception.Message
-# }
-
 $WorkspaceName = if ($env:WORKSPACE_NAME) { $env:WORKSPACE_NAME } else { "npm-cicd" }
 $WorkspaceDir = "/var/jenkins_home/workspace/$WorkspaceName"
 
@@ -148,29 +100,7 @@ kubectl apply -f k8s/argocd.yaml
 
 
 Write-Host "`n==========================================================" -ForegroundColor Cyan
-Write-Host "3. Setup ActiveMQ Artemis on Kubernetes (K3s via Manifest)" -ForegroundColor Yellow
-Write-Host "==========================================================" -ForegroundColor Cyan
-Write-Host "Creating 'artemis' namespace..." -ForegroundColor Cyan
-kubectl create namespace artemis --dry-run=client -o yaml | kubectl apply -f -
-
-Write-Host "Injecting Artemis Credentials from .env to Kubernetes Secret..." -ForegroundColor Cyan
-kubectl create secret generic artemis-credentials -n artemis `
-    --from-literal=ARTEMIS_USER="$env:ARTEMIS_USER" `
-    --from-literal=ARTEMIS_PASSWORD="$env:ARTEMIS_PASSWORD" `
-    --dry-run=client -o yaml | kubectl apply -f -
-
-Write-Host "Applying Artemis StatefulSet Manifest..." -ForegroundColor Cyan
-kubectl apply -f k8s/artemis.yaml
-
-Write-Host "`nWaiting for K3s pods to become ready (this may take a few minutes)..." -ForegroundColor Magenta
-Start-Sleep -Seconds 15
-kubectl wait --for=condition=ready pod --all -n monitoring --timeout=300s
-kubectl wait --for=condition=ready pod --all -n vault --timeout=300s
-kubectl wait --for=condition=ready pod --all -n artemis --timeout=300s
-
-
-Write-Host "`n==========================================================" -ForegroundColor Cyan
-Write-Host "4. Setup Nginx Ingress Controller (Core Networking)" -ForegroundColor Yellow
+Write-Host "3. Setup Nginx Ingress Controller (Core Networking)" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
 helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
 helm repo update
@@ -183,7 +113,7 @@ helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx `
 # helm install cilium cilium/cilium --version 1.14.0 --namespace kube-system --set ingressController.enabled=true --set ingressController.default=true
 
 Write-Host "`n==========================================================" -ForegroundColor Cyan
-Write-Host "5. Setup PGAdmin on Kubernetes (K3s via Helm)" -ForegroundColor Yellow
+Write-Host "4. Setup PGAdmin on Kubernetes (K3s via Helm)" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
 helm repo add runix https://helm.runix.net
 helm repo update
@@ -196,7 +126,7 @@ helm upgrade --install pgadmin runix/pgadmin4 -n default `
 
 
 Write-Host "`n==========================================================" -ForegroundColor Cyan
-Write-Host "6. Setup Prometheus & Grafana on Kubernetes (K3s via Helm)" -ForegroundColor Yellow
+Write-Host "5. Setup Prometheus & Grafana on Kubernetes (K3s via Helm)" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
 kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
@@ -210,7 +140,7 @@ helm upgrade --install prometheus-stack prometheus-community/kube-prometheus-sta
 
 
 Write-Host "`n==========================================================" -ForegroundColor Cyan
-Write-Host "7. Setup HashiCorp Vault on Kubernetes (K3s via Helm)" -ForegroundColor Yellow
+Write-Host "6. Setup HashiCorp Vault on Kubernetes (K3s via Helm)" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
 kubectl create namespace vault --dry-run=client -o yaml | kubectl apply -f -
 helm repo add hashicorp https://helm.releases.hashicorp.com
@@ -225,6 +155,30 @@ helm upgrade --install vault hashicorp/vault -n vault `
 
 
 Write-Host "`n==========================================================" -ForegroundColor Cyan
+Write-Host "7. Setup ActiveMQ Artemis on Kubernetes (K3s via Manifest)" -ForegroundColor Yellow
+Write-Host "==========================================================" -ForegroundColor Cyan
+Write-Host "Creating 'artemis' namespace..." -ForegroundColor Cyan
+# kubectl create namespace artemis --dry-run=client -o yaml | kubectl apply -f -
+
+# Write-Host "Injecting Artemis Credentials from .env to Kubernetes Secret..." -ForegroundColor Cyan
+# kubectl create secret generic artemis-credentials -n artemis `
+#     --from-literal=ARTEMIS_USER="$env:ARTEMIS_USER" `
+#     --from-literal=ARTEMIS_PASSWORD="$env:ARTEMIS_PASSWORD" `
+#     --dry-run=client -o yaml | kubectl apply -f -
+
+# Write-Host "Applying Artemis StatefulSet Manifest..." -ForegroundColor Cyan
+# kubectl apply -f k8s/artemis.yaml
+
+helm repo add vromero https://vromero.github.io/activemq-artemis-helm/
+helm repo update
+
+helm upgrade --install artemis vromero/activemq-artemis -n artemis `
+    --create-namespace `
+    --set adminUser="$env:ARTEMIS_USER" `
+    --set adminPassword="$env:ARTEMIS_PASSWORD"
+
+
+Write-Host "`n==========================================================" -ForegroundColor Cyan
 Write-Host "8. Complete The Installation Process" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
 $grafanaPass = ""
@@ -235,6 +189,57 @@ if ($encodedGrafana) {
     $grafanaPass = "prom-operator" 
 }
 
+Write-Host "`nWaiting for K3s pods to become ready (this may take a few minutes)..." -ForegroundColor Magenta
+Start-Sleep -Seconds 15
+kubectl wait --for=condition=ready pod --all -n monitoring --timeout=300s
+kubectl wait --for=condition=ready pod --all -n vault --timeout=300s
+kubectl wait --for=condition=ready pod --all -n artemis --timeout=300s
+
+Write-Host "`n==========================================================" -ForegroundColor Cyan
+Write-Host "🔐 Migrasi .env ke HashiCorp Vault (KV Engine)" -ForegroundColor Yellow
+Write-Host "==========================================================" -ForegroundColor Cyan
+
+# Konfigurasi Vault Dev Mode
+$VaultAddress = "http://localhost:8200"
+$VaultToken = "root"
+
+$Headers = @{
+    "X-Vault-Token" = $VaultToken
+    "Content-Type"  = "application/json"
+}
+
+$SecretData = @{
+    data = @{
+        POSTGRES_PASSWORD   = $env:POSTGRES_PASSWORD
+        PGADMIN_EMAIL       = $env:PGADMIN_EMAIL
+        PGADMIN_PASSWORD    = $env:PGADMIN_PASSWORD
+        MINIO_ROOT_USER     = $env:MINIO_ROOT_USER
+        MINIO_ROOT_PASSWORD = $env:MINIO_ROOT_PASSWORD
+        ARTEMIS_USER        = $env:ARTEMIS_USER
+        ARTEMIS_PASSWORD    = $env:ARTEMIS_PASSWORD
+        DOCKER_USER         = $env:DOCKER_USER
+        DOCKER_PASS         = $env:DOCKER_PASS
+    }
+}
+
+# Convert ke JSON
+$JsonPayload = $SecretData | ConvertTo-Json -Depth 5
+
+Write-Host "Mencoba injeksi kredensial ke Vault REST API..." -ForegroundColor Cyan
+
+try {
+    # Path 'secret/data/devops-env' adalah path default KV v2 engine pada dev mode
+    $Response = Invoke-RestMethod -Uri "$VaultAddress/v1/secret/data/devops-env" `
+                                  -Method Post `
+                                  -Headers $Headers `
+                                  -Body $JsonPayload
+
+    Write-Host "✅ Kredensial berhasil disimpan di HashiCorp Vault!" -ForegroundColor Green
+    Write-Host "📂 Path Vault: secret/devops-env" -ForegroundColor Green
+} catch {
+    Write-Host "❌ Gagal menyimpan ke Vault. Pastikan pod Vault sudah 'Running' dan Service terbuka di port 8200." -ForegroundColor Red
+    Write-Host $_.Exception.Message
+}
 
 Write-Host "`n==========================================================" -ForegroundColor Green
 Write-Host "Done! Setup successful." -ForegroundColor Green
