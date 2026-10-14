@@ -117,53 +117,48 @@ if ([string]::IsNullOrWhiteSpace($jenkinsPass)) {$jenkinsPass = "InitAdminPasswo
 Write-Host "`n==========================================================" -ForegroundColor Cyan
 Write-Host "2. Setup Argo CD on Kubernetes (K3s)" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
-
-# 1. Bersihkan sisa instalasi lama
 kubectl delete namespace argocd --ignore-not-found=true --force --grace-period=0
 kubectl create namespace argocd
-
-# 2. Install ArgoCD
 kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
 
-Write-Host "`nWaiting for Argo CD pods to become ready (ini butuh waktu beberapa menit)..." -ForegroundColor Magenta
+Write-Host "`nWaiting for Argo CD pods to become ready (this takes a few minutes)..." -ForegroundColor Magenta
 kubectl wait --for=condition=ready pod --all -n argocd --timeout=300s
-
-# 3. Kunci Password secara Permanen!
 $argocdPass = "P4ssw0rdArgoCD"
-Write-Host "`nMengunci password admin ArgoCD..." -ForegroundColor Green
+Write-Host "`nLocking the ArgoCD admin password..." -ForegroundColor Green
 
-# Minta ArgoCD Server membuatkan Bcrypt Hash yang valid secara native (SUDAH DIPERBAIKI SPASINYA)
-$bcryptHash = kubectl exec -n argocd deploy/argocd-server -- argocd account bcrypt --password$argocdPass
+# Have ArgoCD Server generate a valid Bcrypt Hash natively
+$bcryptHash = kubectl exec -n argocd deploy/argocd-server -- argocd account bcrypt --password $argocdPass
 $bcryptHash =$bcryptHash.Trim()
-
 $encodedHash = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($bcryptHash))
 $encodedMtime = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes((Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")))
 
-# Patch ArgoCD Secret dengan hash permanen menggunakan file sementara
+# Patch the ArgoCD Secret with a permanent hash using a temporary file.
 $patchContent = "{ `"data`": { `"admin.password`": `"$encodedHash`", `"admin.passwordMtime`": `"$encodedMtime`" } }"
 $patchContent | Out-File -FilePath "argo-patch.json" -Encoding utf8
-
 kubectl patch secret argocd-secret -n argocd --type='merge' --patch-file argo-patch.json
 Remove-Item "argo-patch.json" -ErrorAction SilentlyContinue
-
-# Hapus initial secret agar ArgoCD tidak mereset ulang passwordnya
 kubectl delete secret argocd-initial-admin-secret -n argocd --ignore-not-found=true
-
-# Restart ArgoCD Server agar membaca password baru
 kubectl rollout restart deploy/argocd-server -n argocd
 kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=argocd-server -n argocd --timeout=120s
 
 Write-Host "[SUCCESS] Password ArgoCD berhasil dikunci mati menjadi: $argocdPass" -ForegroundColor Green
-
-# 4. Terapkan Aplikasi & Expose Service
-kubectl apply -f k8s/argocd-apps/argocd.yaml
-
-# Gunakan sintaks escape yang lebih aman di PowerShell untuk merubah Service ke LoadBalancer
-kubectl patch svc argocd-server -n argocd --type='merge' -p "{`"spec`": {`"type`": `"LoadBalancer`"}}"
-
+kubectl apply -f k8s/argocd/argocd.yaml
 
 Write-Host "`n==========================================================" -ForegroundColor Cyan
-Write-Host "3. Setup PGAdmin on Kubernetes (K3s via Helm)" -ForegroundColor Yellow
+Write-Host "3. Setup Nginx Ingress Controller (Core Networking)" -ForegroundColor Yellow
+Write-Host "==========================================================" -ForegroundColor Cyan
+helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+helm repo update
+helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx `
+    --namespace ingress-nginx `
+    --create-namespace `
+    --set controller.service.type=LoadBalancer
+
+# helm repo add cilium https://helm.cilium.io/
+# helm install cilium cilium/cilium --version 1.14.0 --namespace kube-system --set ingressController.enabled=true --set ingressController.default=true
+
+Write-Host "`n==========================================================" -ForegroundColor Cyan
+Write-Host "4. Setup PGAdmin on Kubernetes (K3s via Helm)" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
 helm repo add runix https://helm.runix.net
 helm repo update
@@ -176,7 +171,7 @@ helm upgrade --install pgadmin runix/pgadmin4 -n default `
 
 
 Write-Host "`n==========================================================" -ForegroundColor Cyan
-Write-Host "4. Setup Prometheus & Grafana on Kubernetes (K3s via Helm)" -ForegroundColor Yellow
+Write-Host "5. Setup Prometheus & Grafana on Kubernetes (K3s via Helm)" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
 kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
@@ -190,7 +185,7 @@ helm upgrade --install prometheus-stack prometheus-community/kube-prometheus-sta
 
 
 Write-Host "`n==========================================================" -ForegroundColor Cyan
-Write-Host "5. Setup HashiCorp Vault on Kubernetes (K3s via Helm)" -ForegroundColor Yellow
+Write-Host "6. Setup HashiCorp Vault on Kubernetes (K3s via Helm)" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
 kubectl create namespace vault --dry-run=client -o yaml | kubectl apply -f -
 helm repo add hashicorp https://helm.releases.hashicorp.com
@@ -205,7 +200,7 @@ helm upgrade --install vault hashicorp/vault -n vault `
 
 
 Write-Host "`n==========================================================" -ForegroundColor Cyan
-Write-Host "6. Setup ActiveMQ Artemis on Kubernetes (K3s via Manifest)" -ForegroundColor Yellow
+Write-Host "7. Setup ActiveMQ Artemis on Kubernetes (K3s via Manifest)" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
 Write-Host "Creating 'artemis' namespace..." -ForegroundColor Cyan
 kubectl create namespace artemis --dry-run=client -o yaml | kubectl apply -f -
@@ -226,9 +221,8 @@ kubectl wait --for=condition=ready pod --all -n vault --timeout=300s
 kubectl wait --for=condition=ready pod --all -n artemis --timeout=300s
 
 Write-Host "`n==========================================================" -ForegroundColor Cyan
-Write-Host "7. Complete The Installation Process" -ForegroundColor Yellow
+Write-Host "8. Complete The Installation Process" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
-
 $grafanaPass = ""
 $encodedGrafana = kubectl get secret prometheus-stack-grafana -n monitoring -o jsonpath="{.data.admin-password}" 2>$null
 if ($encodedGrafana) {

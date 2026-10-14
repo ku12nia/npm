@@ -202,7 +202,8 @@ Once the installation script completes, all passwords and access details will be
 - **ArgoCD Dashboard:** `https://localhost`
   - Accept the self-signed certificate warning.
   - Login with Username: `admin`
-  - Password: `1pESp9R32v29ic-8` (This password is permanently locked by the setup script).
+  - Password: `P4ssw0rdArgoCD` (This password is permanently locked by the setup script).
+  - kubectl port-forward svc/argocd-server -n argocd 8088:80
 - **HashiCorp Vault (Dev Mode):** `http://localhost:8200` 
   - Login with Token: `root`
 - **Grafana:** `http://localhost:8083` 

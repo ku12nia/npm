@@ -3,7 +3,11 @@ kind: Ingress
 metadata:
   name: argocd-server-ingress
   namespace: argocd
+annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
 spec:
+  ingressClassName: nginx
   rules:
   - host: argocd.local
     http:
@@ -14,4 +18,4 @@ spec:
           service:
             name: argocd-server
             port:
-              name: http
+              number: 80
