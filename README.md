@@ -192,7 +192,7 @@ Once the installation script completes, all passwords and access details will be
 
 - **Jenkins:** `http://localhost:8080` 
   - *Note:* The `InitialAdminPassword` is automatically extracted and printed in the terminal at the end of the installation script.
-  - Next, add credentials at `http://localhost:8080/manage/credentials/` using the "Username with password" credential type, with the IDs `dockerhub-creds` and `github-creds`. For `github-creds`, create a new token (*classic* type) at [https://github.com/settings/tokens](https://github.com/settings/tokens), then update your password using that token. 
+  - Next, add credentials at `http://localhost:8080/manage/credentials/` using the "Username with password" credential type, with the IDs `dockerhub-creds`, `github-creds` and `argocd-creds`. For `github-creds`, create a new token (*classic* type) at [https://github.com/settings/tokens](https://github.com/settings/tokens), then update your password using that token. 
   - Ensure the "Lightweight checkout" option at `http://localhost:8080/job/(yourpipeline)/configure` is checked, and make sure the Jenkinsfile directory matches the Script Path, for example `ci/Jenkinsfile`.
 - **PostgreSQL:** `localhost:5432` (Credentials configured via your `.env` file)
 - **MinIO:** `http://localhost:9001` (Credentials configured via your `.env` file)
