@@ -243,13 +243,14 @@ pipeline {
                     def targetBranch = (params.DEPLOY_ENV == 'prod') ? 'main' : params.DEPLOY_ENV
                     def appName = "node-app-${params.DEPLOY_ENV}" 
                     def namespace = "${params.DEPLOY_ENV}-apps" 
-                    def argocdServer = "host.docker.internal"
+                    // def argocdServer = "host.docker.internal"
+                    def argocdServer = "argocd.local:80"
                         // argocd login ${argocdServer} --username \$ARGOCD_USER --password \$ARGOCD_PASS --insecure
                     withCredentials([usernamePassword(credentialsId: 'argocd-creds', passwordVariable: 'ARGOCD_PASS', usernameVariable: 'ARGOCD_USER')]) {
                         sh """
                             set +x
                             echo "🔐 Logging in to ArgoCD via CLI..."
-                            argocd login argocd.local:80 --username admin --password ${ARGOCD_PASS} --insecure --grpc-web
+                            argocd login ${argocdServer} --username admin --password ${ARGOCD_PASS} --insecure --grpc-web
                             
                             echo "🚀 Syncing application: ${appName}..."
                             argocd app sync ${appName}
