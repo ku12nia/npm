@@ -1,5 +1,21 @@
 ---
-# 1. ConfigMap: Disable internal TLS to allow Nginx Ingress access.
+# 1. ConfigMap: RBAC Policy & Insecure Setup
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-rbac-cm
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: argocd-rbac-cm
+    app.kubernetes.io/part-of: argocd
+data:
+  # Berikan izin penuh (allow) untuk role admin
+  policy.csv: |
+    p, role:admin, *, *, *, allow
+    g, admin, role:admin
+  policy.default: role:readonly
+
+---
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -12,7 +28,7 @@ data:
   server.insecure: "true"
 
 ---
-# 2. Ingress: Exposing ArgoCD using Nginx
+# 2. Ingress: Exposing ArgoCD using Nginx (Wildcard Host)
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:

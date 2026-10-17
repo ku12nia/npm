@@ -71,32 +71,37 @@ if ([string]::IsNullOrWhiteSpace($jenkinsPass)) {$jenkinsPass = "InitAdminPasswo
 Write-Host "`n==========================================================" -ForegroundColor Cyan
 Write-Host "2. Setup Argo CD on Kubernetes (K3s)" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
-# kubectl delete namespace argocd --ignore-not-found=true --force --grace-period=0
+
 kubectl create namespace argocd
 kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
 
 Write-Host "`nWaiting for Argo CD pods to become ready (this takes a few minutes)..." -ForegroundColor Magenta
 kubectl wait --for=condition=ready pod --all -n argocd --timeout=300s
+
 $argocdPass = "P4ssw0rdArgoCD"
 Write-Host "`nLocking the ArgoCD admin password..." -ForegroundColor Green
 
-# Have ArgoCD Server generate a valid Bcrypt Hash natively
+# Generate valid Bcrypt Hash natively
 $bcryptHash = kubectl exec -n argocd deploy/argocd-server -- argocd account bcrypt --password $argocdPass
-$bcryptHash =$bcryptHash.Trim()
+$bcryptHash = $bcryptHash.Trim()
 $encodedHash = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($bcryptHash))
 $encodedMtime = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes((Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")))
 
-# Patch the ArgoCD Secret with a permanent hash using a temporary file.
+# Patch the ArgoCD Secret with a permanent hash
 $patchContent = "{ `"data`": { `"admin.password`": `"$encodedHash`", `"admin.passwordMtime`": `"$encodedMtime`" } }"
 $patchContent | Out-File -FilePath "argo-patch.json" -Encoding utf8
 kubectl patch secret argocd-secret -n argocd --type='merge' --patch-file argo-patch.json
 Remove-Item "argo-patch.json" -ErrorAction SilentlyContinue
 kubectl delete secret argocd-initial-admin-secret -n argocd --ignore-not-found=true
+
+# [PERBAIKAN] Apply manifest ConfigMap & Ingress sebelum restart pod
+Write-Host "`nApplying ArgoCD local manifest (ConfigMap & Ingress)..." -ForegroundColor Yellow
+kubectl apply -f k8s/argocd.yaml
+
+# Restart pod agar membaca ConfigMap insecure yang baru di-apply
 kubectl rollout restart deploy/argocd-server -n argocd
 kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=argocd-server -n argocd --timeout=120s
-
 Write-Host "[SUCCESS] Password ArgoCD berhasil dikunci mati menjadi: $argocdPass" -ForegroundColor Green
-kubectl apply -f k8s/argocd.yaml
 
 
 Write-Host "`n==========================================================" -ForegroundColor Cyan
