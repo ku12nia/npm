@@ -199,7 +199,7 @@ Once the installation script completes, all passwords and access details will be
 - **ActiveMQ Artemis:** `http://localhost:8161` (Credentials configured via your `.env` file)
 - **pgAdmin:** `http://localhost:8081` (Credentials configured via your `.env` file)
   > *Important Note:* When registering the PostgreSQL server in pgAdmin, use `host.docker.internal` as the Hostname/Address, because pgAdmin runs inside Kubernetes while PostgreSQL runs in Docker Compose.
-- **ArgoCD Dashboard:** `https://localhost`
+- **ArgoCD Dashboard:** `http://argocd.local`
   - Accept the self-signed certificate warning.
   - Login with Username: `admin`
   - Password: `P4ssw0rdArgoCD` (This password is permanently locked by the setup script).

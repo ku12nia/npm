@@ -209,7 +209,7 @@ pipeline {
                     
                     echo "✨ Updating the Helm values.yaml in the branch: ${targetBranch}"
                     
-                    sh "sed -i 's/tag: .*/tag: \"${imageTag}\"/g' k8s/node-app-chart/values.yaml"
+                    sh "sed -i 's/tag: .*/tag: \"${imageTag}\"/g' k8s/helm-chart/values.yaml"
                     
                     sh 'git config --global user.email "dedimk.devops@gmail.com"'
                     sh 'git config --global user.name "Dedi Mohammad Kurnia"'
@@ -218,7 +218,7 @@ pipeline {
                     
                     if (changes != "") {
                         // sh "git add k8s/app-deployment.yaml"
-                        sh "git add k8s/node-app-chart/values.yaml"
+                        sh "git add k8s/helm-chart/values.yaml"
                         sh "git commit -m 'ci(argocd): update helm image tag to ${imageTag} [skip ci]'"
                         
                         withCredentials([gitUsernamePassword(credentialsId: 'github-creds')]) {
@@ -293,7 +293,7 @@ pipeline {
 //                               "spec": {
 //                                 "source": {
 //                                   "repoURL": "https://github.com/ku12nia/npm.git",
-//                                   "path": "k8s/node-app-chart",
+//                                   "path": "k8s/helm-chart",
 //                                   "targetRevision": "${targetBranch}",
 //                                   "helm": {
 //                                     "valueFiles": ["values.yaml"]
@@ -356,7 +356,7 @@ pipeline {
         //                     )
                             
         //                     if (argoLoginStatus == 0) {
-        //                         sh "./argocd app create ${appName} --repo https://github.com/ku12nia/npm.git --path k8s/node-app-chart --revision ${targetBranch} --dest-server https://kubernetes.default.svc --dest-namespace ${namespace} --sync-policy automated --upsert"
+        //                         sh "./argocd app create ${appName} --repo https://github.com/ku12nia/npm.git --path k8s/helm-chart --revision ${targetBranch} --dest-server https://kubernetes.default.svc --dest-namespace ${namespace} --sync-policy automated --upsert"
         //                         sh "./argocd app sync ${appName}"
                                 
         //                         echo "🔄 App synchronization successful ${appName} to ArgoCD monitoring the branch ${targetBranch}."
