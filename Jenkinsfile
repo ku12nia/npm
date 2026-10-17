@@ -243,9 +243,8 @@ pipeline {
                     def targetBranch = (params.DEPLOY_ENV == 'prod') ? 'main' : params.DEPLOY_ENV
                     def appName = "node-app-${params.DEPLOY_ENV}" 
                     def namespace = "${params.DEPLOY_ENV}-apps" 
-                    // def argocdServer = "host.docker.internal"
-                    def argocdServer = "argocd.local:80"
-                        // argocd login ${argocdServer} --username \$ARGOCD_USER --password \$ARGOCD_PASS --insecure
+                    // def argocdServer = "host.docker.internal:80"
+                    def argocdServer = "192.168.65.3:80"
                     withCredentials([usernamePassword(credentialsId: 'argocd-creds', passwordVariable: 'ARGOCD_PASS', usernameVariable: 'ARGOCD_USER')]) {
                         sh """
                             set +x

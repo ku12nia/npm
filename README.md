@@ -203,6 +203,8 @@ Once the installation script completes, all passwords and access details will be
   - Accept the self-signed certificate warning.
   - Login with Username: `admin`
   - Password: `P4ssw0rdArgoCD` (This password is permanently locked by the setup script).
+  - kubectl get nodes -o wide
+  - kubectl get ingress -n argocd
   - kubectl port-forward svc/argocd-server -n argocd 8088:80
 - **HashiCorp Vault (Dev Mode):** `http://localhost:8200` 
   - Login with Token: `root`
