@@ -171,13 +171,13 @@ pipeline {
         stage('5. Update Manifest & Push ke Git') {
             steps {
                 script {
-                    def newImageTag = "${env.PADDED_BUILD_NUMBER}-${params.DEPLOY_ENV}"
-                    def targetBranch = (params.DEPLOY_ENV == 'prod') ? 'main' : params.DEPLOY_ENV
-                    def targetValuesFile = "k8s/helm-chart/values-${params.DEPLOY_ENV}.yaml" // <-- DINAMIS
+                    def targetEnv = params.DEPLOY_ENV
+                    def targetBranch = (targetEnv == 'prod') ? 'main' : targetEnv
+                    def newImageTag = "${env.PADDED_BUILD_NUMBER}-${targetEnv}"
+                    def targetValuesFile = "k8s/helm-chart/values-${targetEnv}.yaml" // <-- Target file dinamis
                     
                     echo "✨ Mengupdate ${targetValuesFile} pada branch: ${targetBranch}"
                     
-                    // Hanya update tag pada file environment yang spesifik
                     sh "sed -i 's/tag: .*/tag: \"${newImageTag}\"/g' ${targetValuesFile}"
                     
                     sh 'git config --global user.email "dedimk.devops@gmail.com"'
@@ -186,12 +186,19 @@ pipeline {
                     def changes = sh(script: 'git status --porcelain', returnStdout: true).trim()
                     
                     if (changes != "") {
-                        sh "git add ${targetValuesFile}"
-                        sh "git commit -m 'ci(argocd): update helm image tag for ${params.DEPLOY_ENV} to ${newImageTag} [skip ci]'"
+                        sh "git add ${targetValuesFile}" // <-- Dynamic git add
+                        sh "git commit -m 'ci(argocd): update helm image tag for ${targetEnv} to ${newImageTag} [skip ci]'"
                         
                         withCredentials([gitUsernamePassword(credentialsId: 'github-creds')]) {
-                            sh "git push origin HEAD:${targetBranch}"
+                            def gitPushStatus = sh(script: "git push origin HEAD:${targetBranch}", returnStatus: true)
+                            if (gitPushStatus == 0) {
+                                echo "🚀 Berhasil push update manifest Helm ke branch GitHub ${targetBranch}!"
+                            } else {
+                                unstable("⚠️ WARNING: Gagal push ke GitHub.")
+                            }
                         }
+                    } else {
+                        echo "⚠️ Tidak ada perubahan pada manifest, melewatkan proses git commit."
                     }
                 }
             }
@@ -233,6 +240,7 @@ pipeline {
                 }
             }
         }
+        
     }    
     post {
         always {
