@@ -203,7 +203,7 @@ pipeline {
                     def targetEnv = params.DEPLOY_ENV
                     def targetBranch = (targetEnv == 'prod') ? 'main' : targetEnv
                     def appName = "node-app-${targetEnv}" 
-                    def namespace = "${targetEnv}-apps"
+                    def namespace = "${targetEnv}-apps" 
                     def targetValuesFile = "values-${targetEnv}.yaml"
                     def argocdServer = "host.docker.internal:80"
                     
@@ -218,13 +218,15 @@ pipeline {
                               --repo https://github.com/ku12nia/npm.git \
                               --path k8s/helm-chart \
                               --revision ${targetBranch} \
+                              --values ${targetValuesFile} \
                               --dest-server https://kubernetes.default.svc \
                               --dest-namespace ${namespace} \
                               --sync-option CreateNamespace=true \
+                              --sync-option Replace=true \
                               --upsert
                             
                             echo "🚀 Syncing application: ${appName}..."
-                            argocd app sync ${appName}
+                            argocd app sync ${appName} --replace
                         """
                     }
                     echo "🔄 Sinkronisasi ArgoCD berhasil untuk ${appName}!"
