@@ -8,7 +8,7 @@
 ![Vault](https://img.shields.io/badge/Vault-Secrets-FF0000?logo=vault)
 ![Prometheus](https://img.shields.io/badge/Prometheus-Monitoring-E6522C?logo=prometheus)
 ![Grafana](https://img.shields.io/badge/Grafana-Dashboard-F46800?logo=grafana)
-[![LinkedIn](https://img.shields.io/badge/Connect-LinkedIn-0A66C2?logo=linkedin)]([https://www.linkedin.com/in/dedimohammadkurnia/](https://www.linkedin.com/in/dedimohammadkurnia/))
+[![LinkedIn](https://img.shields.io/badge/Connect-LinkedIn-0A66C2?logo=linkedin)](https://www.linkedin.com/in/dedimohammadkurnia/)
 
 This repository provides a ready-to-use **Full-Stack Local DevOps & GitOps** ecosystem. It integrates a modern CI/CD pipeline using Jenkins, local database management (PostgreSQL + pgAdmin), HashiCorp Vault for secrets management, monitoring with Prometheus & Grafana, message brokering with ActiveMQ, object storage with MinIO, and automated deployments to Kubernetes using **ArgoCD** following the **App of Apps** pattern. The entire infrastructure is designed to run seamlessly on top of **Docker Desktop**.
 
@@ -20,17 +20,17 @@ This project applies the principle of **Separation of Concerns**, splitting the 
 
 ### 1. Core Services (Docker Compose)
 These components run directly on the Docker engine to provide stable base services:
-- **Jenkins (CI Server):** Manages automated pipelines that handle source code checkout, testing, building Docker images via embedded Buildx, pushing to Docker Hub, and updating Kubernetes manifests in the Git repository.
+- **Jenkins (CI Server):** Manages automated pipelines handling checkout, unit testing via Docker, building Docker images, pushing to Docker Hub, and updating environment-specific Helm manifests in Git.
 - **PostgreSQL (Database):** Serves as the primary relational database system for the application workloads.
 - **MinIO (Object Storage):** Provides an S3-compatible local object storage for file uploads, backups, or artifact storage.
 
 ### 2. Kubernetes Services (K3s via Docker Desktop)
 These components run inside the Kubernetes cluster to mimic production-grade orchestration:
-- **ArgoCD (Continuous Deployment):** Acts as the primary GitOps controller. Monitors the `k8s/` directory in Git and synchronizes manifest changes directly into the local Kubernetes cluster.
-- **pgAdmin (Database Manager):** Deployed via Helm to provide a web-based GUI for managing the PostgreSQL database (connected via `host.docker.internal`).
-- **ActiveMQ Artemis (Message Broker):** Deployed via native manifests to handle asynchronous messaging and queue management for microservices communication.
-- **HashiCorp Vault:** Manages sensitive credentials and injects dynamic secrets directly into the Node.js deployment pods via the Vault Agent Injector.
-- **Monitoring Stack (Prometheus & Grafana):** Deployed via `kube-prometheus-stack` Helm chart to automatically scrape cluster metrics, monitor pod health, and visualize system performance on customized dashboards.
+- **ArgoCD (Continuous Deployment):** Acts as the primary GitOps controller. Monitors the `k8s/` directory in Git and synchronizes manifest changes directly into target namespaces (`dev-apps`, `staging-apps`, `prod-apps`).
+- **pgAdmin (Database Manager):** Deployed via Helm to provide a web-based GUI for managing PostgreSQL (connected via `host.docker.internal`).
+- **ActiveMQ Artemis (Message Broker):** Deployed via native manifests to handle asynchronous messaging.
+- **HashiCorp Vault:** Injecting dynamic secrets directly into Node.js deployment pods via the Vault Agent Injector.
+- **Monitoring Stack (Prometheus & Grafana):** Deployed via `kube-prometheus-stack` Helm chart to automatically scrape cluster metrics, monitor pod health, and visualize system performance.
 
 ---
 
@@ -45,16 +45,18 @@ These components run inside the Kubernetes cluster to mimic production-grade orc
  ┃ ┣ 📜 prometheus.yml
  ┃ ┗ 📜 pgadmin.json
  ┣ 📂 k8s
- ┃ ┣ 📜 root-app.yaml      
- ┃ ┣ 📂 argocd-apps          
- ┃ ┃ ┗ 📜 node-app-prod.yaml
- ┃ ┗ 📂 node-app-chart
- ┃   ┣ 📂 templates          
+ ┃ ┣ 📜 argocd.yaml        # ArgoCD Ingress, RBAC, & Root App
+ ┃ ┣ 📂 argocd-apps        
+ ┃ ┃ ┗ 📜 node-app-dev.yaml
+ ┃ ┗ 📂 helm-chart
+ ┃   ┣ 📂 templates        
  ┃   ┃ ┣ 📜 deployment.yaml
  ┃   ┃ ┣ 📜 service.yaml
  ┃   ┃ ┗ 📜 ingress.yaml
  ┃   ┣ 📜 Chart.yaml
- ┃   ┗ 📜 values.yaml
+ ┃   ┣ 📜 values-dev.yaml   # Environment specific values
+ ┃   ┣ 📜 values-staging.yaml
+ ┃   ┗ 📜 values-prod.yaml
  ┣ 📂 scripts              
  ┃ ┣ 📂 bash
  ┃ ┃ ┣ 📜 install.sh
@@ -64,32 +66,19 @@ These components run inside the Kubernetes cluster to mimic production-grade orc
  ┃   ┗ 📜 uninstall.ps1        
  ┣ 📂 src                  
  ┃ ┣ 📜 index.js, package.json
+ ┃ ┣ 📜 index.test.js      # Jest unit test
  ┃ ┗ 📜 Dockerfile         
  ┣ 📜 docker-compose.yml   
  ┗ 📜 Dockerfile.jenkins
 ```
 
-### Directory & File Definitions
-
-*   **`ci/`**: Contains the `Jenkinsfile` which defines the Continuous Integration pipeline. It automates the build, test, containerization, and registry push processes, as well as updating the image tag in the Git repository.
-*   **`config/`**: Holds static configuration files required for provisioning external services, including PostgreSQL connection setups, Prometheus scrape targets, and pgAdmin server configurations.
-*   **`k8s/`**: The core directory for Kubernetes orchestration and GitOps management.
-    *   **`root-app.yaml` & `argocd-apps/`**: Implements the ArgoCD App of Apps pattern to bootstrap and synchronize cluster resources automatically.
-    *   **`node-app-chart/`**: A custom Helm Chart for deploying the Node.js application. The `templates/` directory contains Kubernetes manifests (Deployment, Service, Ingress) with integrated HashiCorp Vault Agent Injector annotations, while `values.yaml` acts as the central configuration for dynamic variables (e.g., image tags, ports).
-*   **`scripts/`**: Provides automation scripts in Bash (Linux/macOS) and PowerShell (Windows) for seamless environment setup (`install`) and teardown (`uninstall`).
-*   **`src/`**: The application source code directory, including the `Dockerfile` used by Jenkins to containerize the Node.js application.
-*   **`docker-compose.yml`**: The foundation for the local infrastructure. It defines and orchestrates the core services running outside of Kubernetes, such as Jenkins, PostgreSQL, and MinIO.
-*   **`Dockerfile.jenkins`**: A custom Docker image definition for Jenkins, pre-configured with essential DevOps CLI tools including Docker, Buildx, Kubectl, and ArgoCD CLI to enable seamless pipeline execution.
-
 ---
 
 ## ⚙️ Environment Variables (.env Setup)
 
-Before running the local infrastructure using Docker Compose, you must create a `.env` file in the root directory (`npm/.env`) to configure your local credentials and database secrets.
+Before running the local infrastructure using Docker Compose, create a `.env` file in the root directory (`npm/.env`):
 
-Create a file named `.env` and add the following configuration:
-
-```.env
+```env
 # --- Database ---
 POSTGRES_PASSWORD=pg-local
 
@@ -109,75 +98,55 @@ ARTEMIS_PASSWORD=artemisadmin
 DOCKER_USER=ku12nia
 DOCKER_PASS=[YOUR PAT DOCKER]
 
-# --- Hashicorp Vault ---
-#Method -> Token = root
-
 # --- Jenkins Workspace ---
 WORKSPACE_NAME=npm-cicd
 WORKSPACE_DIR=/var/jenkins_home/workspace/npm-cicd
 
-# The absolute path to your project folder on Host (Windows)
+# Absolute path to project folder on Host Windows/Linux
 LOCAL_PROJECT_PATH=C:/Users/evoel/Downloads/labs_dedi/npm
 ```
 
 ---
 
 ## 🛠 Git Version Control Guide
-Before committing your changes, ensure your local Git identity is correctly configured:
+
+Set up local Git credentials before making commits:
 
 ```bash
-# Set your Git identity (use --global for system-wide or --local for this repository only)
 git config --global user.name "Dedi Mohammad Kurnia"
-git config --global user.email "kurniawan.noperfect@gmail.com"
-git status
+git config --global user.email "dedimk.devops@gmail.com"
 ```
 
-Standard Commit & Push Workflow
-
+Standard Commit & Push Workflow:
 ```bash
 git status
 git add .
-git commit -m "your message"
+git commit -m "feat(ci): refactor pipeline for multi-environment image promotion"
+git push origin dev
+```
+
+🚨 Handling Accidental Credentials Exposure:
+If GitHub Push Protection blocks your commit:
+```bash
+git reset --soft origin/main
+git add .
+git commit -m "fix(security): sanitize exposed secrets"
 git push
 ```
 
-🚨 Handling Accidental Credentials Exposure
+---
 
-If you accidentally commit sensitive data (such as API tokens or passwords) and your push gets blocked by GitHub Push Protection:
-- Remove or clean the secret from your file(s).
-- Reset your local commit history back to the remote state without losing your code changes:
+## 🚀 Step-by-Step Installation
 
-```bash
-git reset --soft origin/main
-```
-
-- Re-add and create a clean commit:
-
-```bash
-git add .
-git commit -m "preparation migrasi to vault (clean)"
-```
-
-- Push safely:
-
-```bash
-git add .
-git commit -m "preparation migrasi to vault (clean)"
-```
-
-## 🚀 Step-by-Step Guide
-
-Make sure that Kubernetes is enabled and running in **Docker Desktop** (green status indicator) before proceeding.
+Ensure Kubernetes is enabled in **Docker Desktop** before running installation scripts.
 
 ### Option A: Linux / macOS / Git Bash Users
-Navigate to the `scripts/bash` directory and run the setup script:
 ```bash
 cd scripts/bash
 chmod +x install.sh && ./install.sh
 ```
 
 ### Option B: Windows (PowerShell) Users
-Open PowerShell and navigate to the `scripts\powershell` directory. If you encounter execution policy restrictions, bypass them first:
 ```powershell
 cd scripts\powershell
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
@@ -188,94 +157,120 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 
 ## 🌐 Accessing Services
 
-Once the installation script completes, all passwords and access details will be automatically printed in your terminal. You can access the following dashboards and services directly:
-
-- **Jenkins:** `http://localhost:8080` 
-  - *Note:* The `InitialAdminPassword` is automatically extracted and printed in the terminal at the end of the installation script.
-  - Next, add credentials at `http://localhost:8080/manage/credentials/` using the "Username with password" credential type, with the IDs `dockerhub-creds`, `github-creds` and `argocd-creds`. For `github-creds`, create a new token (*classic* type) at [https://github.com/settings/tokens](https://github.com/settings/tokens), then update your password using that token. 
-  - Ensure the "Lightweight checkout" option at `http://localhost:8080/job/(yourpipeline)/configure` is checked, and make sure the Jenkinsfile directory matches the Script Path, for example `ci/Jenkinsfile`.
-- **PostgreSQL:** `localhost:5432` (Credentials configured via your `.env` file)
-- **MinIO:** `http://localhost:9001` (Credentials configured via your `.env` file)
-- **ActiveMQ Artemis:** `http://localhost:8161` (Credentials configured via your `.env` file)
-- **pgAdmin:** `http://localhost:8081` (Credentials configured via your `.env` file)
-  > *Important Note:* When registering the PostgreSQL server in pgAdmin, use `host.docker.internal` as the Hostname/Address, because pgAdmin runs inside Kubernetes while PostgreSQL runs in Docker Compose.
-- **ArgoCD Dashboard:** `http://argocd.local`
-  - Accept the self-signed certificate warning.
-  - Login with Username: `admin`
-  - Password: `P4ssw0rdArgoCD` (This password is permanently locked by the setup script).
-  - kubectl get nodes -o wide
-  - kubectl get ingress -n argocd
-  - kubectl port-forward svc/argocd-server -n argocd 8088:80
-- **HashiCorp Vault (Dev Mode):** `http://localhost:8200` 
-  - Login with Token: `root`
-- **Grafana:** `http://localhost:8083` 
-  - Login with Username: `admin`
-  - *Note:* The password is automatically extracted and printed in the terminal at the end of the script (default is `prom-operator` if not fetched).
+- **Jenkins:** `http://localhost:8080`
+  - Required credentials in Jenkins Store (`Username with password`):
+    - `dockerhub-creds`
+    - `github-creds` (Use GitHub Personal Access Token)
+    - `argocd-creds`
+- **ArgoCD Dashboard:** `http://argocd.local` (Username: `admin`, Password: `P4ssw0rdArgoCD`)
+- **pgAdmin:** `http://localhost:8081` (Host: `host.docker.internal`)
+- **HashiCorp Vault:** `http://localhost:8200` (Token: `root`)
+- **Grafana:** `http://localhost:8083` (User: `admin`, Password shown in terminal output)
 - **Prometheus:** `http://localhost:9090`
 
 ---
 
-## 🛠 Troubleshooting & Maintenance
+## 🛠 Troubleshooting & Operations Guide
 
-### 1. Cleaning up Docker Resources
-Use the following commands to clean your system from unused containers, networks, and dangling images to keep your storage optimized:
+### 1. CI/CD Strategy: Image Promotion & Multi-Environment
+To maintain production stability, the pipeline follows the **Build Once, Deploy Anywhere** pattern:
+* **Dev Environment (`dev`):** Jenkins checks out source code, runs unit tests, builds the Docker image (e.g. `01-dev`), pushes to Docker Hub, and updates `values-dev.yaml`.
+* **Staging / Production (`staging` / `prod`):** **No rebuilds allowed.** Pipeline accepts `IMAGE_TAG_TO_PROMOTE` (e.g. `01-dev`), pulls the stable image, re-tags it (e.g. `01-staging` or `01-prod`), and updates `values-staging.yaml` / `values-prod.yaml`.
+* **Production Gate:** Pipeline enforces a manual **Approval Gate** (`input` step) before deploying to Production.
+* **NodePort Allocation:** To prevent port collision, ports are segmented in values files:
+  - Dev: `nodePort: 30001`
+  - Staging: `nodePort: 30002`
+  - Production: `nodePort: 30000`
 
-```bash
-# Remove all unused containers, networks, and images
-docker system prune -a
+---
 
-# List all remaining volumes in the system
-docker volume ls
+### 2. Resolving ArgoCD OutOfSync & Kubernetes Deployment Errors
 
-# List all remaining images in the system
-docker images
-```
-
-### 2. Fixing DNS/Timeout Issues on Docker Desktop (Windows)
-If you experience network connection failures or timeouts (*exit code: 28*) when running the installation process or building images, this is often caused by a Windows DNS resolution bug in Docker Desktop. Follow these steps to set a static DNS:
-
-1. Open the **Docker Desktop** application.
-2. Click the gear icon (**Settings**) in the top right corner.
-3. Navigate to the **Docker Engine** menu on the left panel.
-4. Add static DNS configuration (e.g., Google and Cloudflare: `"dns": ["8.8.8.8", "1.1.1.1"]`) into the Docker daemon JSON settings.
-
-**Configuration Example:**
-```json
-{
-  "builder": {
-    "gc": {
-      "defaultKeepStorage": "20GB",
-      "enabled": true
-    }
-  },
-  "dns": ["8.8.8.8", "1.1.1.1"],
-  "experimental": false
-}
-```
-5. Click **Apply & restart** in the bottom right corner and wait a moment for the Docker Engine to restart.
-
-## 🗑️ Uninstall & Cleanup
-
-If you wish to remove ArgoCD, Vault, and Prometheus from your Kubernetes cluster and stop/clean up Docker containers and their volumes, use the provided uninstall script:
-
-* **Linux / macOS / Git Bash:**
+#### A. Error: `spec.selector: field is immutable`
+* **Root Cause:** Kubernetes `spec.selector` on Deployment specs cannot be patched on existing deployments if label definitions change.
+* **Fix (One-time Cleanup):** Delete the existing Deployment object directly from the cluster so ArgoCD can recreate it with updated selectors:
   ```bash
-  cd scripts/bash
-  chmod +x uninstall.sh && ./uninstall.sh
+  kubectl delete deployment node-app -n dev-apps
   ```
-* **Windows (PowerShell):**
-  ```powershell
-  cd scripts\powershell
-  Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-  .\uninstall.ps1
+* **Fix (Pipeline-level):** Pass `--replace` or `--sync-option Replace=true` during ArgoCD CLI sync execution:
+  ```bash
+  argocd app sync node-app-dev --replace
+  ```
+
+#### B. Error: `namespaces "dev-apps" not found`
+* **Fix:** Enforce automated namespace creation during ArgoCD application registration:
+  ```bash
+  argocd app create node-app-dev \
+    --sync-option CreateNamespace=true \
+    --upsert
+  ```
+
+#### C. Error: `PermissionDenied` on ArgoCD CLI
+* **Fix:** Update `argocd-rbac-cm` ConfigMap policy to allow admin role or elevate default policy for lab environments:
+  ```yaml
+  data:
+    policy.csv: |
+      p, role:admin, *, *, *, allow
+      g, admin, role:admin
+    policy.default: role:admin
   ```
 
 ---
 
-## 👨‍💻 Let's Connect!
+### 3. Resolving Jenkins Test & Build Counter Issues
 
-This project is designed to demonstrate practical implementations of Modern CI/CD, GitOps, Kubernetes, Docker, and Infrastructure Automation. 
+#### A. Issue: "No tests found" & Invalid JUnit XML
+* **Root Cause:** Jest runs with `--passWithNoTests`, but outputs a zero-test XML (`tests="0"`), causing the Jenkins JUnit parser plugin to throw an error.
+* **Fix:** Add a valid test file at `src/index.test.js`:
+  ```javascript
+  test('validates CI unit testing pipeline', () => {
+      expect(true).toBe(true);
+  });
+  ```
 
-Interested in discussing DevOps practices, SRE, or potential project collaborations? Let's connect!
+#### B. Resetting Jenkins Build Number Counter
+If build numbers get out of sync or you need to reset back to `#01-dev`:
+
+1. Open **Jenkins -> Manage Jenkins -> Script Console**.
+2. **Option A: Safe Reset (To Next Number #100)**
+   ```groovy
+   def job = Jenkins.instance.getItem("npm-cicd")
+   job.nextBuildNumber = 100
+   job.saveNextBuildNumber()
+   println "Next build number set to: ${job.nextBuildNumber}"
+   ```
+3. **Option B: Clean Reset back to #1 (Purging Old Builds)**
+   *Note: You MUST delete old build directories (`#1` to `#99`) first, or Jenkins will silently fail when attempting to overwrite existing build folders.*
+   ```groovy
+   def job = Jenkins.instance.getItem("npm-cicd")
+   job.builds.each { it.delete() }
+   job.nextBuildNumber = 1
+   job.saveNextBuildNumber()
+   println "Build history cleared. Next build will start at #1"
+   ```
+
+---
+
+### 4. Docker & System Maintenance
+```bash
+# Clean unused containers, networks, and images
+docker system prune -a --volumes
+
+# Fix Docker Desktop Windows DNS timeout bugs (Add to Docker Engine Settings JSON)
+"dns": ["8.8.8.8", "1.1.1.1"]
+```
+
+---
+
+## 🗑️ Uninstall & Cleanup
+
+To teardown Kubernetes deployments and Docker containers:
+
+* **Linux / macOS:** `cd scripts/bash && ./uninstall.sh`
+* **Windows (PowerShell):** `cd scripts\powershell && .\uninstall.ps1`
+
+---
+
+## 👨‍💻 Connect & Contribute
 
 [![LinkedIn Profile](https://img.shields.io/badge/LinkedIn-Dedi_Mohammad_Kurnia-0A66C2?style=for-the-badge&logo=linkedin)](https://www.linkedin.com/in/dedimohammadkurnia/)
