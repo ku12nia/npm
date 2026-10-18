@@ -173,10 +173,12 @@ pipeline {
                 script {
                     def newImageTag = "${env.PADDED_BUILD_NUMBER}-${params.DEPLOY_ENV}"
                     def targetBranch = (params.DEPLOY_ENV == 'prod') ? 'main' : params.DEPLOY_ENV
+                    def targetValuesFile = "k8s/helm-chart/values-${params.DEPLOY_ENV}.yaml" // <-- DINAMIS
                     
-                    echo "✨ Mengupdate values.yaml Helm pada branch: ${targetBranch}"
+                    echo "✨ Mengupdate ${targetValuesFile} pada branch: ${targetBranch}"
                     
-                    sh "sed -i 's/tag: .*/tag: \"${newImageTag}\"/g' k8s/helm-chart/values.yaml"
+                    // Hanya update tag pada file environment yang spesifik
+                    sh "sed -i 's/tag: .*/tag: \"${newImageTag}\"/g' ${targetValuesFile}"
                     
                     sh 'git config --global user.email "dedimk.devops@gmail.com"'
                     sh 'git config --global user.name "Dedi Mohammad Kurnia"'
@@ -184,19 +186,12 @@ pipeline {
                     def changes = sh(script: 'git status --porcelain', returnStdout: true).trim()
                     
                     if (changes != "") {
-                        sh "git add k8s/helm-chart/values.yaml"
-                        sh "git commit -m 'ci(argocd): update helm image tag to ${newImageTag} [skip ci]'"
+                        sh "git add ${targetValuesFile}"
+                        sh "git commit -m 'ci(argocd): update helm image tag for ${params.DEPLOY_ENV} to ${newImageTag} [skip ci]'"
                         
                         withCredentials([gitUsernamePassword(credentialsId: 'github-creds')]) {
-                            def gitPushStatus = sh(script: "git push origin HEAD:${targetBranch}", returnStatus: true)
-                            if (gitPushStatus == 0) {
-                                echo "🚀 Berhasil push update manifest Helm ke branch GitHub ${targetBranch}!"
-                            } else {
-                                unstable("⚠️ WARNING: Gagal push ke GitHub.")
-                            }
+                            sh "git push origin HEAD:${targetBranch}"
                         }
-                    } else {
-                        echo "⚠️ Tidak ada perubahan pada manifest, melewatkan proses git commit."
                     }
                 }
             }
@@ -205,7 +200,11 @@ pipeline {
         stage('6. Trigger ArgoCD Sync CLI') {
             steps {
                 script {
-                    def appName = "node-app-${params.DEPLOY_ENV}" 
+                    def targetEnv = params.DEPLOY_ENV
+                    def targetBranch = (targetEnv == 'prod') ? 'main' : targetEnv
+                    def appName = "node-app-${targetEnv}" 
+                    def namespace = "${targetEnv}-apps"
+                    def targetValuesFile = "values-${targetEnv}.yaml"
                     def argocdServer = "host.docker.internal:80"
                     
                     withCredentials([usernamePassword(credentialsId: 'argocd-creds', passwordVariable: 'ARGOCD_PASS', usernameVariable: 'ARGOCD_USER')]) {
@@ -213,6 +212,16 @@ pipeline {
                             set +x
                             echo "🔐 Logging in to ArgoCD via CLI..."
                             argocd login ${argocdServer} --username \$ARGOCD_USER --password \$ARGOCD_PASS --plaintext --grpc-web
+                            
+                            echo "📝 Ensuring application ${appName} is registered..."
+                            argocd app create ${appName} \
+                              --repo https://github.com/ku12nia/npm.git \
+                              --path k8s/helm-chart \
+                              --revision ${targetBranch} \
+                              --dest-server https://kubernetes.default.svc \
+                              --dest-namespace ${namespace} \
+                              --sync-option CreateNamespace=true \
+                              --upsert
                             
                             echo "🚀 Syncing application: ${appName}..."
                             argocd app sync ${appName}

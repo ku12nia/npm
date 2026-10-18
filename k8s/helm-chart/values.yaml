@@ -3,7 +3,7 @@
 # ==========================================
 replicaCount: 1
 
-appName: prod-app
+appName: node-app
 deploymentName: node-app
 
 # ==========================================
@@ -11,7 +11,7 @@ deploymentName: node-app
 # ==========================================
 image:
   repository: ku12nia/nodejs
-  pullPolicy: Always
+  pullPolicy: IfNotPresent
   tag: "91-dev"
 
 # ==========================================
@@ -21,7 +21,7 @@ service:
   type: NodePort
   port: 80
   targetPort: 3000
-  nodePort: 30000
+  nodePort: 30001
 
 # ==========================================
 # 4. Networking: Ingress (External Access)
