@@ -1,14 +1,14 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "my-app.fullname" . }}-service
+  name: {{ .Values.deploymentName }}-service
   labels:
-    app: {{ include "my-app.name" . }}
+    app: {{ .Values.deploymentName }}
 spec:
-  type: NodePort
+  type: {{ .Values.service.type }}
   ports:
     - port: {{ .Values.service.port }}
       targetPort: {{ .Values.service.targetPort }}
       nodePort: {{ .Values.service.nodePort }}
   selector:
-    app: {{ include "my-app.name" . }}
+    app: {{ .Values.deploymentName }}
