@@ -196,9 +196,10 @@ if ($encodedGrafana) {
 
 
 Write-Host "`n==========================================================" -ForegroundColor Cyan
-Write-Host "🔐 Migrasi .env ke HashiCorp Vault (KV Engine)" -ForegroundColor Yellow
+Write-Host "🔐 Injecting CI/CD Credentials into HashiCorp Vault (KV Engine)" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
 
+# Tunggu sejenak agar Vault benar-benar siap setelah deploy via Helm
 Start-Sleep -Seconds 5
 
 $VaultAddress = "http://localhost:8200"
@@ -209,7 +210,32 @@ $Headers = @{
     "Content-Type"  = "application/json"
 }
 
-$SecretPayload = @{
+# 1. Payload untuk Docker Hub
+$DockerPayload = @{
+    data = @{
+        username = "$env:DOCKER_USER"
+        password = "$env:DOCKER_PASS"
+    }
+} | ConvertTo-Json -Depth 10 -Compress
+
+# 2. Payload untuk GitHub (Membutuhkan GH_TOKEN di .env jika ingin full otomatis)
+$GitHubPayload = @{
+    data = @{
+        username = "$env:DOCKER_USER" # Asumsi username GitHub sama dengan Docker
+        token    = "$env:GH_TOKEN"    # Pastikan Anda menambahkan GH_TOKEN di file .env Anda
+    }
+} | ConvertTo-Json -Depth 10 -Compress
+
+# 3. Payload untuk ArgoCD
+$ArgoPayload = @{
+    data = @{
+        username = "admin"
+        password = "$argocdPass" # Menggunakan variabel $argocdPass dari script di atas
+    }
+} | ConvertTo-Json -Depth 10 -Compress
+
+# 4. Payload untuk Kredensial Environment Utama (Opsional, jika Anda masih membutuhkannya)
+$EnvPayload = @{
     data = @{
         POSTGRES_PASSWORD   = "$env:POSTGRES_PASSWORD"
         PGADMIN_EMAIL       = "$env:PGADMIN_EMAIL"
@@ -218,29 +244,49 @@ $SecretPayload = @{
         MINIO_ROOT_PASSWORD = "$env:MINIO_ROOT_PASSWORD"
         ARTEMIS_USER        = "$env:ARTEMIS_USER"
         ARTEMIS_PASSWORD    = "$env:ARTEMIS_PASSWORD"
-        DOCKER_USER         = "$env:DOCKER_USER"
-        DOCKER_PASS         = "$env:DOCKER_PASS"
     }
-}
+} | ConvertTo-Json -Depth 10 -Compress
 
-$JsonPayload = $SecretPayload | ConvertTo-Json -Depth 10 -Compress
 
-Write-Host "Mencoba injeksi kredensial ke Vault REST API..." -ForegroundColor Cyan
+Write-Host "Mencoba injeksi struktur rahasia ke Vault REST API..." -ForegroundColor Cyan
 
 try {
-    $VaultParams = @{
-        Uri     = "$VaultAddress/v1/secret/data/devops-env"
-        Method  = "Post"
-        Headers = $Headers
-        Body    = $JsonPayload
-    }
+    # Injeksi Docker Hub
+    Invoke-RestMethod -Uri "$VaultAddress/v1/secret/data/ci/dockerhub" -Method "Post" -Headers $Headers -Body $DockerPayload | Out-Null
+    Write-Host "✅ Kredensial Docker Hub disimpan di Vault (secret/data/ci/dockerhub)" -ForegroundColor Green
+
+    # Injeksi GitHub
+    Invoke-RestMethod -Uri "$VaultAddress/v1/secret/data/ci/github" -Method "Post" -Headers $Headers -Body $GitHubPayload | Out-Null
+    Write-Host "✅ Kredensial GitHub disimpan di Vault (secret/data/ci/github)" -ForegroundColor Green
+
+    # Injeksi ArgoCD
+    Invoke-RestMethod -Uri "$VaultAddress/v1/secret/data/ci/argocd" -Method "Post" -Headers $Headers -Body $ArgoPayload | Out-Null
+    Write-Host "✅ Kredensial ArgoCD disimpan di Vault (secret/data/ci/argocd)" -ForegroundColor Green
     
-    $Response = Invoke-RestMethod @VaultParams
-    Write-Host "✅ Kredensial berhasil disimpan di Vault!" -ForegroundColor Green
+    # Injeksi Devops Environment
+    Invoke-RestMethod -Uri "$VaultAddress/v1/secret/data/devops-env" -Method "Post" -Headers $Headers -Body $EnvPayload | Out-Null
+    Write-Host "✅ Kredensial DevOps Utama disimpan di Vault (secret/data/devops-env)" -ForegroundColor Green
+
 } catch {
-    Write-Host "⚠️ Peringatan: Gagal menyimpan otomatis ke Vault, namun instalasi utama tetap aman." -ForegroundColor Yellow
+    Write-Host "⚠️ Peringatan: Gagal menyimpan otomatis ke Vault, pastikan Vault sudah Running." -ForegroundColor Yellow
     Write-Host "Detail Error: $($_.Exception.Message)" -ForegroundColor Red
 }
+
+Write-Host "`n==========================================================" -ForegroundColor Green
+Write-Host "Done! Setup successful." -ForegroundColor Green
+Write-Host "==========================================================" -ForegroundColor Green
+Write-Host "ACCESS YOUR SERVICES:"
+Write-Host " - Jenkins    : http://localhost:8080"
+Write-Host "   InitAdmin  : $jenkinsPass (Login: jenkins / jenkins)" -ForegroundColor Green
+Write-Host " - Argo CD    : http://argocd.local (User: admin, Pass: $argocdPass)" -ForegroundColor Green
+Write-Host " - Artemis    : http://localhost:8161 (User: $($env:ARTEMIS_USER), Pass: $($env:ARTEMIS_PASSWORD))" -ForegroundColor Green
+Write-Host " - Grafana    : http://localhost:8083 (User: admin, Pass: $grafanaPass)" -ForegroundColor Green
+Write-Host " - Prometheus : http://localhost:9090" -ForegroundColor Green
+Write-Host " - PGAdmin    : http://localhost:8081 (User: $($env:PGADMIN_EMAIL), Pass: $($env:PGADMIN_PASSWORD))"
+Write-Host " - PostgreSQL : localhost:5432 (User: postgres, Pass: $($env:POSTGRES_PASSWORD))"
+Write-Host " - MinIO      : http://localhost:9001 (User: $($env:MINIO_ROOT_USER), Pass: $($env:MINIO_ROOT_PASSWORD))" -ForegroundColor Green
+Write-Host " - Vault      : http://localhost:8200 (Token: root)" -ForegroundColor Green
+Write-Host "==========================================================" -ForegroundColor Green
 
 Write-Host "`n==========================================================" -ForegroundColor Green
 Write-Host "Done! Setup successful." -ForegroundColor Green
