@@ -251,7 +251,45 @@ If build numbers get out of sync or you need to reset back to `#01-dev`:
 
 ---
 
-### 4. Docker & System Maintenance
+### 4. Vault Re-installation Conflicts (Forbidden StatefulSet Updates)
+If you encounter server-side apply failed or MutatingWebhookConfiguration conflicts when re-running the installation script, it means cluster-wide resources from a previous Vault installation are locked. Run this Deep Clean snippet:
+
+```powershell
+# Deep Clean Vault Cluster-Wide Resources
+helm uninstall vault -n vault --no-hooks --ignore-not-found
+kubectl delete namespace vault --force --grace-period=0
+kubectl delete mutatingwebhookconfiguration vault-agent-injector-cfg --ignore-not-found
+kubectl delete validatingwebhookconfiguration vault-agent-injector-webhook --ignore-not-found
+kubectl delete clusterrole vault-agent-injector-clusterrole --ignore-not-found
+kubectl delete clusterrolebinding vault-agent-injector-clusterrolebinding --ignore-not-found
+kubectl delete pvc --all -n vault --ignore-not-found
+Remove-Item "vault-keys.json" -ErrorAction SilentlyContinue
+```
+
+---
+
+### 5. PowerShell Script Syntax & Encoding Issues (Windows)
+
+If you encounter syntax errors, hanging executions, or broken special characters/emojis when running `install.ps1` on Windows, check for unclosed quotes and improper file encoding:
+
+#### A. Checking for Unclosed Double Quotes
+Run the following debug snippet in PowerShell to scan `install.ps1` for unbalanced double quotes:
+
+```powershell
+$lines = Get-Content .\scripts\powershell\install.ps1
+for ($i = 0; $i -lt $lines.Count; $i++) {
+    $lineNum = $i + 1
+    $lineText = $lines[$i]
+    $quoteCount = ($lineText.Split('"').Count - 1)
+    if ($quoteCount % 2 -ne 0) {
+        Write-Host "🚨 Unbalanced quotes ($quoteCount) at Line ${lineNum}: $lineText" -ForegroundColor Red
+    }
+}
+```
+
+---
+
+### 6. Docker & System Maintenance
 ```bash
 # Clean unused containers, networks, and images
 docker system prune -a --volumes

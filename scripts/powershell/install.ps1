@@ -6,8 +6,8 @@ if (Test-Path ".env") {
     Write-Host "Loading environment variables from .env file..." -ForegroundColor Cyan
     Get-Content ".env" | ForEach-Object {
         if ($_ -match '^\s*([^#\s][^=]+)=(.*)$') {
-            $name =$matches[1].Trim()
-            $value =$matches[2].Trim()
+            $name = $matches[1].Trim()
+            $value = $matches[2].Trim()
             [Environment]::SetEnvironmentVariable($name,$value, "Process")
         }
     }
@@ -62,7 +62,7 @@ $jenkinsId = docker ps -q --filter "name=jenkins"
 $jenkinsPass = ""
 
 if ($jenkinsId) {$rawPass = docker exec $jenkinsId cat /var/jenkins_home/secrets/initialAdminPassword 2>$null
-    if ($rawPass) { $jenkinsPass =$rawPass.Trim() }
+    if ($rawPass) { $jenkinsPass = $rawPass.Trim() }
 }
 if ([string]::IsNullOrWhiteSpace($jenkinsPass)) {$jenkinsPass = "InitAdminPassword has been performed; please log in using the credentials registered in Jenkins."
 }
@@ -194,104 +194,96 @@ if ($encodedGrafana) {
     $grafanaPass = "prom-operator" 
 }
 
+# 1. Pembersihan total resource global & namespace lama
+Write-Host "Membersihkan resource global dan instalasi Vault sebelumnya..." -ForegroundColor Cyan
+helm uninstall vault -n vault --no-hooks --ignore-not-found 2>$null
+kubectl delete namespace vault --force --grace-period=0 --ignore-not-found 2>$null
+kubectl delete mutatingwebhookconfiguration vault-agent-injector-cfg --ignore-not-found 2>$null
+kubectl delete validatingwebhookconfiguration vault-agent-injector-webhook --ignore-not-found 2>$null
+kubectl delete clusterrole vault-agent-injector-clusterrole --ignore-not-found 2>$null
+kubectl delete clusterrolebinding vault-agent-injector-clusterrolebinding --ignore-not-found 2>$null
 
-Write-Host "`n==========================================================" -ForegroundColor Cyan
-Write-Host "🔐 Injecting CI/CD Credentials into HashiCorp Vault (KV Engine)" -ForegroundColor Yellow
-Write-Host "==========================================================" -ForegroundColor Cyan
-
-# Tunggu sejenak agar Vault benar-benar siap setelah deploy via Helm
-Start-Sleep -Seconds 5
-
-$VaultAddress = "http://localhost:8200"
-$VaultToken = "root"
-
-$Headers = @{
-    "X-Vault-Token" = $VaultToken
-    "Content-Type"  = "application/json"
+# 2. Hapus file kunci lama lokal dengan aman jika ada
+$keyFile = "vault-keys.json"
+if (Test-Path $keyFile) {
+    try {
+        Remove-Item $keyFile -Force -ErrorAction Stop
+        Write-Host "✅ Berhasil menghapus file kunci lama ($keyFile)." -ForegroundColor Green
+    } catch {
+        Write-Host "⚠️ Gagal menghapus $keyFile, file mungkin sedang digunakan proses lain." -ForegroundColor Yellow
+    }
 }
 
-# 1. Payload untuk Docker Hub
-$DockerPayload = @{
-    data = @{
-        username = "$env:DOCKER_USER"
-        password = "$env:DOCKER_PASS"
-    }
-} | ConvertTo-Json -Depth 10 -Compress
+# 3. Buat ulang namespace dan jalankan Helm install
+kubectl create namespace vault --dry-run=client -o yaml | kubectl apply -f -
+helm repo add hashicorp https://helm.releases.hashicorp.com
+helm repo update
 
-# 2. Payload untuk GitHub (Membutuhkan GH_TOKEN di .env jika ingin full otomatis)
-$GitHubPayload = @{
-    data = @{
-        username = "$env:DOCKER_USER" # Asumsi username GitHub sama dengan Docker
-        token    = "$env:GH_TOKEN"    # Pastikan Anda menambahkan GH_TOKEN di file .env Anda
-    }
-} | ConvertTo-Json -Depth 10 -Compress
+# Menyalakan Production Mode dengan Persistent Volume Claim (PVC) 1GB
+helm upgrade --install vault hashicorp/vault -n vault `
+    --set "server.dev.enabled=false" `
+    --set "server.dataStorage.enabled=true" `
+    --set "server.dataStorage.size=1Gi" `
+    --set "injector.enabled=true" `
+    --set "ui.enabled=true" `
+    --set "ui.serviceType=LoadBalancer" `
+    --set "ui.externalPort=8200"
 
-# 3. Payload untuk ArgoCD
-$ArgoPayload = @{
-    data = @{
-        username = "admin"
-        password = "$argocdPass" # Menggunakan variabel $argocdPass dari script di atas
-    }
-} | ConvertTo-Json -Depth 10 -Compress
+Write-Host "`nWaiting for Vault pod to be created..." -ForegroundColor Magenta
+Start-Sleep -Seconds 10
+kubectl wait --for=condition=ready pod/vault-0 -n vault --timeout=120s
 
-# 4. Payload untuk Kredensial Environment Utama (Opsional, jika Anda masih membutuhkannya)
-$EnvPayload = @{
-    data = @{
-        POSTGRES_PASSWORD   = "$env:POSTGRES_PASSWORD"
-        PGADMIN_EMAIL       = "$env:PGADMIN_EMAIL"
-        PGADMIN_PASSWORD    = "$env:PGADMIN_PASSWORD"
-        MINIO_ROOT_USER     = "$env:MINIO_ROOT_USER"
-        MINIO_ROOT_PASSWORD = "$env:MINIO_ROOT_PASSWORD"
-        ARTEMIS_USER        = "$env:ARTEMIS_USER"
-        ARTEMIS_PASSWORD    = "$env:ARTEMIS_PASSWORD"
-    }
-} | ConvertTo-Json -Depth 10 -Compress
+Write-Host "`nChecking Vault Initialization and Seal Status..." -ForegroundColor Yellow
+$vaultStatusJson = kubectl exec -n vault vault-0 -- vault status -format=json 2>$null
+$vaultStatus = $vaultStatusJson | ConvertFrom-Json
 
-
-Write-Host "Mencoba injeksi struktur rahasia ke Vault REST API..." -ForegroundColor Cyan
-
-try {
-    # Injeksi Docker Hub
-    Invoke-RestMethod -Uri "$VaultAddress/v1/secret/data/ci/dockerhub" -Method "Post" -Headers $Headers -Body $DockerPayload | Out-Null
-    Write-Host "✅ Kredensial Docker Hub disimpan di Vault (secret/data/ci/dockerhub)" -ForegroundColor Green
-
-    # Injeksi GitHub
-    Invoke-RestMethod -Uri "$VaultAddress/v1/secret/data/ci/github" -Method "Post" -Headers $Headers -Body $GitHubPayload | Out-Null
-    Write-Host "✅ Kredensial GitHub disimpan di Vault (secret/data/ci/github)" -ForegroundColor Green
-
-    # Injeksi ArgoCD
-    Invoke-RestMethod -Uri "$VaultAddress/v1/secret/data/ci/argocd" -Method "Post" -Headers $Headers -Body $ArgoPayload | Out-Null
-    Write-Host "✅ Kredensial ArgoCD disimpan di Vault (secret/data/ci/argocd)" -ForegroundColor Green
-    
-    # Injeksi Devops Environment
-    Invoke-RestMethod -Uri "$VaultAddress/v1/secret/data/devops-env" -Method "Post" -Headers $Headers -Body $EnvPayload | Out-Null
-    Write-Host "✅ Kredensial DevOps Utama disimpan di Vault (secret/data/devops-env)" -ForegroundColor Green
-
-} catch {
-    Write-Host "⚠️ Peringatan: Gagal menyimpan otomatis ke Vault, pastikan Vault sudah Running." -ForegroundColor Yellow
-    Write-Host "Detail Error: $($_.Exception.Message)" -ForegroundColor Red
+if ($vaultStatus.initialized -eq $false) {
+    Write-Host "⚙️ Vault belum di-inisialisasi. Memulai proses init (1 Key Share)..." -ForegroundColor Cyan
+    $initResult = kubectl exec -n vault vault-0 -- vault operator init -key-shares=1 -key-threshold=1 -format=json
+    $initResult | Out-File -FilePath $keyFile -Encoding utf8
+    Write-Host "✅ Vault di-inisialisasi! Kunci baru disimpan di '$keyFile'." -ForegroundColor Green
+} else {
+    Write-Host "✅ Vault sudah terinisialisasi sebelumnya." -ForegroundColor Green
 }
 
-Write-Host "`n==========================================================" -ForegroundColor Green
-Write-Host "Done! Setup successful." -ForegroundColor Green
-Write-Host "==========================================================" -ForegroundColor Green
-Write-Host "ACCESS YOUR SERVICES:"
-Write-Host " - Jenkins    : http://localhost:8080"
-Write-Host "   InitAdmin  : $jenkinsPass (Login: jenkins / jenkins)" -ForegroundColor Green
-Write-Host " - Argo CD    : http://argocd.local (User: admin, Pass: $argocdPass)" -ForegroundColor Green
-Write-Host " - Artemis    : http://localhost:8161 (User: $($env:ARTEMIS_USER), Pass: $($env:ARTEMIS_PASSWORD))" -ForegroundColor Green
-Write-Host " - Grafana    : http://localhost:8083 (User: admin, Pass: $grafanaPass)" -ForegroundColor Green
-Write-Host " - Prometheus : http://localhost:9090" -ForegroundColor Green
-Write-Host " - PGAdmin    : http://localhost:8081 (User: $($env:PGADMIN_EMAIL), Pass: $($env:PGADMIN_PASSWORD))"
-Write-Host " - PostgreSQL : localhost:5432 (User: postgres, Pass: $($env:POSTGRES_PASSWORD))"
-Write-Host " - MinIO      : http://localhost:9001 (User: $($env:MINIO_ROOT_USER), Pass: $($env:MINIO_ROOT_PASSWORD))" -ForegroundColor Green
-Write-Host " - Vault      : http://localhost:8200 (Token: root)" -ForegroundColor Green
-Write-Host "==========================================================" -ForegroundColor Green
+# Membaca token dan kunci dari file lokal yang baru
+if (-not (Test-Path $keyFile)) {
+    Write-Host "❌ File $keyFile tidak ditemukan! Tidak bisa melakukan Unseal." -ForegroundColor Red
+    exit
+}
 
-Write-Host "`n==========================================================" -ForegroundColor Green
-Write-Host "Done! Setup successful." -ForegroundColor Green
-Write-Host "==========================================================" -ForegroundColor Green
+$vaultKeys = Get-Content $keyFile | ConvertFrom-Json
+$unsealKey = $vaultKeys.unseal_keys_b64[0]
+$VaultRootToken = $vaultKeys.root_token
 
+# Mengecek apakah Vault dalam kondisi Sealed (Terkunci)
+$vaultStatusJson = kubectl exec -n vault vault-0 -- vault status -format=json 2>$null
+$vaultStatus = $vaultStatusJson | ConvertFrom-Json
+
+if ($vaultStatus.sealed -eq$true) {
+    Write-Host "🔐 Vault dalam keadaan Terkunci (Sealed). Melakukan Unseal otomatis..." -ForegroundColor Cyan
+    kubectl exec -n vault vault-0 -- vault operator unseal $unsealKey | Out-Null
+    Write-Host "🔓 Vault berhasil di-Unseal!" -ForegroundColor Green
+} else {
+    Write-Host "🔓 Vault sudah dalam keadaan terbuka (Unsealed)." -ForegroundColor Green
+}
+
+Write-Host "`nMemeriksa dan mengaktifkan KV Secrets Engine di path 'secret/'..." -ForegroundColor Yellow
+
+# Login CLI menggunakan Root Token agar punya otorisasi
+kubectl exec -n vault vault-0 -- vault login $VaultRootToken | Out-Null
+
+# Mengecek apakah path 'secret/' sudah aktif
+$secretsList = kubectl exec -n vault vault-0 -- vault secrets list -format=json 2>$null
+$secretsObj = $secretsList | ConvertFrom-Json
+
+if (-not $secretsObj.'secret/') {
+    Write-Host "⚙️ Path 'secret/' belum aktif. Mengaktifkan KV v2 Engine..." -ForegroundColor Cyan
+    kubectl exec -n vault vault-0 -- vault secrets enable -path=secret -version=2 kv | Out-Null
+    Write-Host "✅ KV v2 Engine berhasil diaktifkan di 'secret/'!" -ForegroundColor Green
+} else {
+    Write-Host "✅ Path 'secret/' sudah aktif." -ForegroundColor Green
+}
 
 Write-Host "`n==========================================================" -ForegroundColor Green
 Write-Host "Done! Setup successful." -ForegroundColor Green
@@ -306,17 +298,5 @@ Write-Host " - Prometheus : http://localhost:9090" -ForegroundColor Green
 Write-Host " - PGAdmin    : http://localhost:8081 (User: $($env:PGADMIN_EMAIL), Pass: $($env:PGADMIN_PASSWORD))"
 Write-Host " - PostgreSQL : localhost:5432 (User: postgres, Pass: $($env:POSTGRES_PASSWORD))"
 Write-Host " - MinIO      : http://localhost:9001 (User: $($env:MINIO_ROOT_USER), Pass: $($env:MINIO_ROOT_PASSWORD))" -ForegroundColor Green
-Write-Host " - Vault      : http://localhost:8200 (Token: root)" -ForegroundColor Green
+Write-Host " - Vault      : http://localhost:8200 (Token: $VaultRootToken)" -ForegroundColor Green
 Write-Host "==========================================================" -ForegroundColor Green
-
-# CEK ERROR
-# $lines = Get-Content .\scripts\powershell\install.ps1
-# for ($i = 0; $i -lt $lines.Count; $i++) {
-#     $lineNum = $i + 1
-#     $lineText = $lines[$i]
-#     $quoteCount = ($lineText.Split('"').Count - 1)
-#     if ($quoteCount % 2 -ne 0) {
-#         Write-Host "🚨 Kutip ganjil ($quoteCount buah) di Baris $lineNum: $lineText" -ForegroundColor Red
-#     }
-# }
-# GANTI UTF-8 with BOM
