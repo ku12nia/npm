@@ -12,7 +12,7 @@ deploymentName: node-app
 image:
   repository: ku12nia/nodejs
   pullPolicy: IfNotPresent
-  tag: "92-dev"
+  tag: "93-dev"
 
 # ==========================================
 # 3. Networking: Service (Internal Access)
