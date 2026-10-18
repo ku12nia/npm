@@ -1,5 +1,7 @@
 ---
+# ==========================================
 # 1. ConfigMap: RBAC Policy & Insecure Setup
+# ==========================================
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -28,7 +30,9 @@ data:
   server.insecure: "true"
 
 ---
+# ==========================================
 # 2. Ingress: Exposing ArgoCD using Nginx (Wildcard Host)
+# ==========================================
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -51,7 +55,9 @@ spec:
               number: 80
 
 ---
-# 3. Application: Root App (App of Apps) to detect other GitOps applications.
+# ==========================================
+# 3. Application: Root App (App of Apps)
+# ==========================================
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -70,3 +76,6 @@ spec:
     automated:
       prune: true
       selfHeal: true
+    syncOptions:
+      - CreateNamespace=true  # Otomatis membuat namespace jika belum ada
+      - RespectIgnoreDifferences=true
