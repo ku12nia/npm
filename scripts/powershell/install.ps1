@@ -6,8 +6,8 @@ if (Test-Path ".env") {
     Write-Host "Loading environment variables from .env file..." -ForegroundColor Cyan
     Get-Content ".env" | ForEach-Object {
         if ($_ -match '^\s*([^#\s][^=]+)=(.*)$') {
-            $name = $matches[1].Trim()
-            $value = $matches[2].Trim()
+            $name =$matches[1].Trim()
+            $value =$matches[2].Trim()
             [Environment]::SetEnvironmentVariable($name,$value, "Process")
         }
     }
@@ -17,7 +17,7 @@ if (Test-Path ".env") {
     exit
 }
 
-$WorkspaceName = if ($env:WORKSPACE_NAME) { $env:WORKSPACE_NAME } else { "npm-cicd" }
+$WorkspaceName = if ($env:WORKSPACE_NAME) {$env:WORKSPACE_NAME } else { "npm-cicd" }
 $WorkspaceDir = "/var/jenkins_home/workspace/$WorkspaceName"
 
 if (-not (Get-Command helm -ErrorAction SilentlyContinue)) {
@@ -51,22 +51,170 @@ if (-not [string]::IsNullOrWhiteSpace($env:DOCKER_USER) -and -not [string]::IsNu
     Write-Host "⚠️ DOCKER_USER or DOCKER_PASS not found in .env, skipping explicit login..." -ForegroundColor Yellow
 }
 
+Write-Host "Fixing volume permissions for Jenkins..." -ForegroundColor Cyan
 docker run --rm -v npm_jenkins_home:/var/jenkins_home alpine chown -R 1000:1000 /var/jenkins_home 2>$null
-docker compose up -d --build
-#docker compose build --no-cache
+docker run --rm -v nexus_data:/nexus-data alpine chown -R 200:200 /nexus-data 2>$null
+
+$composeImageName = "npm-jenkins"
+
+Write-Host "🔍 Checking the availability of a custom Docker image ($composeImageName)..." -ForegroundColor Yellow
+$imageExists = docker images -q $composeImageName 2>$null
+
+if ([string]::IsNullOrWhiteSpace($imageExists)) {
+    Write-Host "⚙️ Image not yet available locally. Initiating initial build process." -ForegroundColor Cyan
+    docker compose up -d --build
+} else {
+    Write-Host "✅ Image '$composeImageName' Already available. Launching the container immediately." -ForegroundColor Green
+    docker compose up -d
+}
 
 Write-Host "`nWaiting for Docker containers to initialize (20s)..." -ForegroundColor Magenta
 Start-Sleep -Seconds 20
 
+# --- Get Jenkins Password ---
 $jenkinsId = docker ps -q --filter "name=jenkins"
 $jenkinsPass = ""
-
-if ($jenkinsId) {$rawPass = docker exec $jenkinsId cat /var/jenkins_home/secrets/initialAdminPassword 2>$null
+if ($jenkinsId) {
+    $rawPass = docker exec $jenkinsId cat /var/jenkins_home/secrets/initialAdminPassword 2>$null
     if ($rawPass) { $jenkinsPass = $rawPass.Trim() }
 }
-if ([string]::IsNullOrWhiteSpace($jenkinsPass)) {$jenkinsPass = "InitAdminPassword has been performed; please log in using the credentials registered in Jenkins."
+if ([string]::IsNullOrWhiteSpace($jenkinsPass)) {
+    $jenkinsPass = "InitAdminPassword has been performed; please log in using the credentials registered in Jenkins."
 }
 
+# --- Get Nexus Initial Password dengan Polling ---
+# $nexusId = docker ps -q --filter "name=nexus"
+# $nexusPass = ""
+
+# if ($nexusId) {
+#     Write-Host "⏳ Menunggu Nexus selesai booting dan men-generate password (bisa memakan waktu 1-2 menit)..." -ForegroundColor Magenta
+    
+#     $retryCount = 0
+#     $maxRetries = 18 # Maksimal menunggu 18 x 5 detik = 90 detik
+
+#     while ($retryCount -lt $maxRetries) {
+#         # Coba baca file password
+#         $rawNexusPass = docker exec $nexusId cat /nexus-data/admin.password 2>$null
+        
+#         # Jika berhasil membaca dan isinya bukan pesan error "No such file"
+#         if ($rawNexusPass -and $rawNexusPass -notmatch "No such file" -and -not [string]::IsNullOrWhiteSpace($rawNexusPass)) {
+#             $nexusPass = $rawNexusPass.Trim()
+#             Write-Host "✅ Password Nexus berhasil didapatkan!" -ForegroundColor Green
+#             break
+#         }
+        
+#         Start-Sleep -Seconds 5
+#         $retryCount++
+#     }
+# }
+
+# if ([string]::IsNullOrWhiteSpace($nexusPass)) {
+#     $nexusPass = "Password has been changed or check manually."
+# }
+
+
+Write-Host "`n==========================================================" -ForegroundColor Cyan
+Write-Host "📦 Mengunggah File Binary Lokal ke Nexus Repository" -ForegroundColor Yellow
+Write-Host "==========================================================" -ForegroundColor Cyan
+
+$binFolder = "$env:LOCAL_PROJECT_PATH\bin"
+$nexusUrl = "http://localhost:8082"
+$repoName = "raw-binaries"
+$nexusPass = $env:NEXUS_PASSWORD # <= menambahkan variable untuk pass nexus
+
+# if ($nexusPass -notmatch "Password has been changed") {
+#     Write-Host "Memeriksa dan membuat repository '$repoName' di Nexus..." -ForegroundColor Cyan
+#     $repoPayload = @{
+#         name = $repoName
+#         online = $true
+#         storage = @{
+#             blobStoreName = "default"
+#             strictContentTypeValidation = $false
+#         }
+#     } | ConvertTo-Json -Depth 10
+
+#     $base64AuthInfo = [Convert]::ToBase64String([System.Text.Encoding]::ASCII.GetBytes(("admin:{0}" -f $nexusPass)))
+#     $headers = @{Authorization=("Basic {0}" -f $base64AuthInfo)}
+    
+#     try {
+#         Invoke-RestMethod -Uri "$nexusUrl/service/rest/v1/repositories/raw/hosted" -Method Post -Headers $headers -ContentType "application/json" -Body $repoPayload -ErrorAction Stop | Out-Null
+#         Write-Host "✅ Repository '$repoName' berhasil dibuat." -ForegroundColor Green
+#     } catch {
+#         Write-Host "✅ Repository '$repoName' sudah tersedia." -ForegroundColor Green
+#     }
+
+#     if (Test-Path $binFolder) {
+#         $files = Get-ChildItem -Path $binFolder -File
+#         if ($files.Count -gt 0) {
+#             foreach ($file in $files) {
+#                 Write-Host "⬆️ Mengunggah $($file.Name) ke Nexus..." -ForegroundColor Yellow
+#                 $uploadUrl = "$nexusUrl/repository/$repoName/$($file.Name)"
+                
+#                 # Menggunakan curl.exe bawaan Windows (dengan -T untuk upload file)
+#                 curl.exe -s -u "admin:$nexusPass" -T "$($file.FullName)" "$uploadUrl"
+                
+#                 Write-Host "✅ Selesai mengunggah $($file.Name)." -ForegroundColor Green
+#             }
+#         } else {
+#             Write-Host "⚠️ Folder $binFolder kosong. Tidak ada yang diunggah." -ForegroundColor Yellow
+#         }
+#     } else {
+#         Write-Host "⚠️ Folder $binFolder tidak ditemukan. Lewati proses upload." -ForegroundColor Yellow
+#     }
+
+# } else {
+#     Write-Host "⚠️ Password Nexus tidak valid. Silakan upload file bin secara manual." -ForegroundColor Red
+# }
+
+
+if ([string]::IsNullOrWhiteSpace($nexusPass)) {
+    Write-Host "⚠️ NEXUS_PASSWORD tidak ditemukan di .env! Lewati proses upload otomatis." -ForegroundColor Red
+} else {
+    Write-Host "Memeriksa dan membuat repository '$repoName' di Nexus..." -ForegroundColor Cyan
+    
+    $repoPayload = @{
+        name = $repoName
+        online = $true
+        storage = @{
+            blobStoreName = "default"
+            strictContentTypeValidation = $false
+        }
+    } | ConvertTo-Json -Depth 10
+
+    $base64AuthInfo = [Convert]::ToBase64String([System.Text.Encoding]::ASCII.GetBytes(("admin:{0}" -f $nexusPass)))
+    $headers = @{Authorization=("Basic {0}" -f $base64AuthInfo)}
+    
+    try {
+        Invoke-RestMethod -Uri "$nexusUrl/service/rest/v1/repositories/raw/hosted" -Method Post -Headers $headers -ContentType "application/json" -Body $repoPayload -ErrorAction Stop | Out-Null
+        Write-Host "✅ Repository '$repoName' berhasil dibuat via API." -ForegroundColor Green
+    } catch {
+        Write-Host "✅ Repository '$repoName' sudah tersedia di sistem." -ForegroundColor Green
+    }
+
+    if (Test-Path $binFolder) {
+        $files = Get-ChildItem -Path $binFolder -File
+        if ($files.Count -gt 0) {
+            foreach ($file in $files) {
+                Write-Host "⬆️ Mengunggah $($file.Name) ke Nexus..." -ForegroundColor Yellow
+                $uploadUrl = "$nexusUrl/repository/$repoName/$($file.Name)"
+                
+                $curlResult = curl.exe -s -w "%{http_code}" -u "admin:$nexusPass" -T "$($file.FullName)" "$uploadUrl"
+                
+                if ($curlResult -match "200|201|204") {
+                    Write-Host "✅ Sukses mengunggah $($file.Name)." -ForegroundColor Green
+                } else {
+                    Write-Host "⚠️ Gagal mengunggah $($file.Name). HTTP Code: $curlResult" -ForegroundColor Red
+                }
+            }
+        } else {
+            Write-Host "⚠️ Folder $binFolder kosong." -ForegroundColor Yellow
+        }
+    } else {
+        Write-Host "⚠️ Folder $binFolder tidak ditemukan." -ForegroundColor Yellow
+    }
+}
+
+# -------------------------------------------------------------------------
 
 Write-Host "`n==========================================================" -ForegroundColor Cyan
 Write-Host "2. Setup Argo CD on Kubernetes (K3s)" -ForegroundColor Yellow
@@ -159,10 +307,10 @@ helm upgrade --install vault hashicorp/vault -n vault `
     --set "ui.externalPort=8200"
 
 
-Write-Host "`n==========================================================" -ForegroundColor Cyan
-Write-Host "7. Setup ActiveMQ Artemis on Kubernetes (K3s via Manifest)" -ForegroundColor Yellow
-Write-Host "==========================================================" -ForegroundColor Cyan
-Write-Host "Creating 'artemis' namespace..." -ForegroundColor Cyan
+# Write-Host "`n==========================================================" -ForegroundColor Cyan
+# Write-Host "7. Setup ActiveMQ Artemis on Kubernetes (K3s via Manifest)" -ForegroundColor Yellow
+# Write-Host "==========================================================" -ForegroundColor Cyan
+# Write-Host "Creating 'artemis' namespace..." -ForegroundColor Cyan
 # kubectl create namespace artemis --dry-run=client -o yaml | kubectl apply -f -
 
 # Write-Host "Injecting Artemis Credentials from .env to Kubernetes Secret..." -ForegroundColor Cyan
@@ -174,6 +322,10 @@ Write-Host "Creating 'artemis' namespace..." -ForegroundColor Cyan
 # Write-Host "Applying Artemis StatefulSet Manifest..." -ForegroundColor Cyan
 # kubectl apply -f k8s/artemis.yaml
 
+Write-Host "`n==========================================================" -ForegroundColor Cyan
+Write-Host "7. Setup ActiveMQ Artemis on Kubernetes (K3s via Helm)" -ForegroundColor Yellow
+Write-Host "==========================================================" -ForegroundColor Cyan
+Write-Host "Creating 'artemis' namespace..." -ForegroundColor Cyan
 helm repo add vromero https://vromero.github.io/activemq-artemis-helm/
 helm repo update
 
@@ -291,6 +443,7 @@ Write-Host "==========================================================" -Foregro
 Write-Host "ACCESS YOUR SERVICES:"
 Write-Host " - Jenkins    : http://localhost:8080"
 Write-Host "   InitAdmin  : $jenkinsPass (Login: jenkins / jenkins)" -ForegroundColor Green
+Write-Host " - Nexus 3    : http://localhost:8082 (User: admin, Pass: $nexusPass)" -ForegroundColor Green
 Write-Host " - Argo CD    : https://localhost (User: admin, Pass: $argocdPass)" -ForegroundColor Green
 Write-Host " - Artemis    : http://localhost:8161 (User: $($env:ARTEMIS_USER), Pass: $($env:ARTEMIS_PASSWORD))" -ForegroundColor Green
 Write-Host " - Grafana    : http://localhost:8083 (User: admin, Pass: $grafanaPass)" -ForegroundColor Green

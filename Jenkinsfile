@@ -119,8 +119,13 @@ pipeline {
                     
                     dir('src') {
                         if (targetEnv == 'dev') {
-                            echo "🏗️ Membangun Docker image baru dari source code untuk Dev..."
-                            sh "DOCKER_BUILDKIT=1 docker build -t ${imageRepo}:${newImageTag} ."            
+                            echo "🔍 Menarik image dev sebelumnya untuk referensi cache..."
+                            // Menggunakan || true agar pipeline tidak gagal jika image dev-cache belum pernah ada di registry (run pertama)
+                            sh "docker pull ${imageRepo}:dev-cache || true"
+                            
+                            echo "🏗️ Membangun Docker image baru (menggunakan Cache BuildKit)..."
+                            // Tambahkan flag --cache-from, --build-arg BUILDKIT_INLINE_CACHE=1, dan tag dev-cache
+                            sh "DOCKER_BUILDKIT=1 docker build --cache-from ${imageRepo}:dev-cache --build-arg BUILDKIT_INLINE_CACHE=1 -t ${imageRepo}:${newImageTag} -t ${imageRepo}:dev-cache ."            
                         } else {
                             if (!params.IMAGE_TAG_TO_PROMOTE?.trim()) {
                                 error("❌ Deployment ke ${targetEnv} dibatalkan! Parameter 'IMAGE_TAG_TO_PROMOTE' wajib diisi dengan image tag yang sudah stable (misal: 01-dev).")
@@ -157,7 +162,12 @@ pipeline {
                             error("❌ Gagal push image tag ${newImageTag} ke Docker Hub! Pipeline dihentikan.")
                         }
                         
-                        if (targetEnv == 'prod') {
+                        // Push tambahan sesuai environment untuk kebutuhan referensi ke depannya
+                        if (targetEnv == 'dev') {
+                            echo "🚀 Pushing image cache referensi (dev-cache)..."
+                            sh "docker push ${imageRepo}:dev-cache"
+                        } else if (targetEnv == 'prod') {
+                            echo "🚀 Pushing image latest..."
                             def pushLatest = sh(script: "docker push ${imageRepo}:latest", returnStatus: true)
                             if (pushLatest != 0) {
                                 error("❌ Gagal push image 'latest'. Pipeline dihentikan.")

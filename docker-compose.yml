@@ -53,6 +53,18 @@ services:
     networks:
       - devops-network
 
+  # --- NEXUS ---
+  nexus:
+    image: sonatype/nexus3:latest
+    container_name: nexus
+    restart: unless-stopped
+    ports:
+      - "8082:8081"
+    volumes:
+      - nexus_data:/nexus-data
+    networks:
+      - devops-network
+
 volumes:
   jenkins_home:
     name: npm_jenkins_home
@@ -60,6 +72,8 @@ volumes:
     name: npm_pgdata
   minio_data:
     name: npm_minio_data
+  nexus_data:
+    name: nexus_data
 
 networks:
   devops-network:

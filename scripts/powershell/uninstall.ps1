@@ -10,8 +10,8 @@ Write-Host "Cleaning up Applications and Projects..."
 kubectl delete applications --all -n argocd --ignore-not-found=true --force --grace-period=0
 kubectl delete appprojects --all -n argocd --ignore-not-found=true --force --grace-period=0
 
-Write-Host "Deleting all Argo CD installation resources..."
-kubectl delete -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml --ignore-not-found=true
+# Write-Host "Deleting all Argo CD installation resources..."
+# kubectl delete -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml --ignore-not-found=true
 
 Write-Host "Deleting remaining Custom Resource Definitions (CRD)..."
 kubectl delete crd applications.argoproj.io applicationsets.argoproj.io appprojects.argoproj.io applicationsyncwindows.argoproj.io --ignore-not-found=true
@@ -57,7 +57,7 @@ if (Get-Command helm -ErrorAction SilentlyContinue) {
 }
 
 # Write-Host "`n==========================================================" -ForegroundColor Cyan
-# Write-Host "🗑️ 5. Removing ActiveMQ Artemis" -ForegroundColor Yellow
+# Write-Host "🗑️ 5. Removing ActiveMQ Artemis (via kubectl)" -ForegroundColor Yellow
 # Write-Host "==========================================================" -ForegroundColor Cyan
 # Write-Host "Cleaning up Artemis specific workloads (Deployment & StatefulSet)..." -ForegroundColor Yellow
 # kubectl delete deployment artemis -n artemis --ignore-not-found=true
@@ -89,9 +89,10 @@ Write-Host "`n==========================================================" -Foreg
 Write-Host "🛑 6. Stopping Jenkins, PostgreSQL, and MinIO (Docker Compose)" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
 Write-Host "Stopping and removing Docker containers and default networks..."
-docker compose down --rmi all
-docker image prune -f
-docker builder prune -f
+# docker compose down --rmi all
+# docker image prune -f
+# docker builder prune -f
+docker compose down
 
 Write-Host "`nLogging out from Docker registry to clear credentials..." -ForegroundColor Yellow
 docker logout

@@ -1,16 +1,15 @@
-# Node.js GitOps & Local DevOps Lab (App of Apps Pattern)
-
 ![Jenkins](https://img.shields.io/badge/Jenkins-CI-blue?logo=jenkins)
 ![ArgoCD](https://img.shields.io/badge/ArgoCD-CD-orange?logo=argo)
 ![Kubernetes](https://img.shields.io/badge/Kubernetes-GitOps-blue?logo=kubernetes)
 ![Docker](https://img.shields.io/badge/Docker-Desktop-2496ED?logo=docker)
+![Nexus](https://img.shields.io/badge/Nexus-Repository-1B1C1D?logo=sonatype)
 ![Postgres](https://img.shields.io/badge/PostgreSQL-Database-336791?logo=postgresql)
 ![Vault](https://img.shields.io/badge/Vault-Secrets-FF0000?logo=vault)
 ![Prometheus](https://img.shields.io/badge/Prometheus-Monitoring-E6522C?logo=prometheus)
 ![Grafana](https://img.shields.io/badge/Grafana-Dashboard-F46800?logo=grafana)
 [![LinkedIn](https://img.shields.io/badge/Connect-LinkedIn-0A66C2?logo=linkedin)](https://www.linkedin.com/in/dedimohammadkurnia/)
 
-This repository provides a ready-to-use **Full-Stack Local DevOps & GitOps** ecosystem. It integrates a modern CI/CD pipeline using Jenkins, local database management (PostgreSQL + pgAdmin), HashiCorp Vault for secrets management, monitoring with Prometheus & Grafana, message brokering with ActiveMQ, object storage with MinIO, and automated deployments to Kubernetes using **ArgoCD** following the **App of Apps** pattern. The entire infrastructure is designed to run seamlessly on top of **Docker Desktop**.
+This repository provides a ready-to-use **Full-Stack Local DevOps & GitOps** ecosystem. It integrates a modern CI/CD pipeline using Jenkins, local database management (PostgreSQL + pgAdmin), HashiCorp Vault for secrets management, monitoring with Prometheus & Grafana, message brokering with ActiveMQ, object storage with MinIO, a local artifactory via **Sonatype Nexus**, and automated deployments to Kubernetes using **ArgoCD** following the **App of Apps** pattern. The entire infrastructure is designed to run seamlessly on top of **Docker Desktop**.
 
 ---
 
@@ -21,6 +20,7 @@ This project applies the principle of **Separation of Concerns**, splitting the 
 ### 1. Core Services (Docker Compose)
 These components run directly on the Docker engine to provide stable base services:
 - **Jenkins (CI Server):** Manages automated pipelines handling checkout, unit testing via Docker, building Docker images, pushing to Docker Hub, and updating environment-specific Helm manifests in Git.
+- **Sonatype Nexus 3 (Artifactory):** Serves as a local repository manager for caching Docker images, npm packages, and hosting raw binary files (like `kubectl` and `argocd` CLI) to mitigate network timeouts during offline builds.
 - **PostgreSQL (Database):** Serves as the primary relational database system for the application workloads.
 - **MinIO (Object Storage):** Provides an S3-compatible local object storage for file uploads, backups, or artifact storage.
 
@@ -162,6 +162,7 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
     - `dockerhub-creds`
     - `github-creds` (Use GitHub Personal Access Token)
     - `argocd-creds`
+- **Nexus Repository:** `http://localhost:8082` (User: `admin`, Password: `generated during install`)
 - **ArgoCD Dashboard:** `http://argocd.local` (Username: `admin`, Password: `P4ssw0rdArgoCD`)
 - **pgAdmin:** `http://localhost:8081` (Host: `host.docker.internal`)
 - **HashiCorp Vault:** `http://localhost:8200` (Token: `root`)
@@ -184,7 +185,13 @@ To maintain production stability, the pipeline follows the **Build Once, Deploy 
 
 ---
 
-### 2. Resolving ArgoCD OutOfSync & Kubernetes Deployment Errors
+### 2. Offline Mitigation & Local Artifactory (Nexus)
+To prevent network timeouts (e.g., unexpected eof) during Jenkins image builds:
+* The PowerShell installation script leverages the Nexus REST API to automatically create a raw-binaries repository. Binary files (like argocd-linux-amd64, kubectl, docker.tgz) stored in the local bin/ directory are auto-uploaded to Nexus during environment initialization. The Dockerfile.jenkins is configured to pull these files directly from the local Nexus proxy (http://nexus:8081/repository/raw-binaries/...) instead of external GitHub/Docker servers.
+
+---
+
+### 3. Resolving ArgoCD OutOfSync & Kubernetes Deployment Errors
 
 #### A. Error: `spec.selector: field is immutable`
 * **Root Cause:** Kubernetes `spec.selector` on Deployment specs cannot be patched on existing deployments if label definitions change.
@@ -217,7 +224,7 @@ To maintain production stability, the pipeline follows the **Build Once, Deploy 
 
 ---
 
-### 3. Resolving Jenkins Test & Build Counter Issues
+### 4. Resolving Jenkins Test & Build Counter Issues
 
 #### A. Issue: "No tests found" & Invalid JUnit XML
 * **Root Cause:** Jest runs with `--passWithNoTests`, but outputs a zero-test XML (`tests="0"`), causing the Jenkins JUnit parser plugin to throw an error.
@@ -251,7 +258,7 @@ If build numbers get out of sync or you need to reset back to `#01-dev`:
 
 ---
 
-### 4. Vault Re-installation Conflicts (Forbidden StatefulSet Updates)
+### 5. Vault Re-installation Conflicts (Forbidden StatefulSet Updates)
 If you encounter server-side apply failed or MutatingWebhookConfiguration conflicts when re-running the installation script, it means cluster-wide resources from a previous Vault installation are locked. Run this Deep Clean snippet:
 
 ```powershell
@@ -268,7 +275,7 @@ Remove-Item "vault-keys.json" -ErrorAction SilentlyContinue
 
 ---
 
-### 5. PowerShell Script Syntax & Encoding Issues (Windows)
+### 6. PowerShell Script Syntax & Encoding Issues (Windows)
 
 If you encounter syntax errors, hanging executions, or broken special characters/emojis when running `install.ps1` on Windows, check for unclosed quotes and improper file encoding:
 
@@ -289,7 +296,7 @@ for ($i = 0; $i -lt $lines.Count; $i++) {
 
 ---
 
-### 6. Docker & System Maintenance
+### 7. Docker & System Maintenance
 ```bash
 # Clean unused containers, networks, and images
 docker system prune -a --volumes
