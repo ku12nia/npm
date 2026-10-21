@@ -75,7 +75,6 @@ if (Get-Command helm -ErrorAction SilentlyContinue) {
     Write-Host "Uninstalling artemis Helm release..." -ForegroundColor Yellow
     helm uninstall artemis -n artemis --ignore-not-found=true
     
-    # Wajib ada: Helm tidak menghapus PVC bawaan StatefulSet secara otomatis
     Write-Host "Deleting Persistent Volume Claims (PVC) to wipe data..." -ForegroundColor Yellow
     kubectl delete pvc --all -n artemis --ignore-not-found=true
     
@@ -93,6 +92,9 @@ Write-Host "Stopping and removing Docker containers and default networks..."
 docker compose down --rmi all
 docker image prune -f
 docker builder prune -f
+
+Write-Host "`nLogging out from Docker registry to clear credentials..." -ForegroundColor Yellow
+docker logout
 
 Write-Host "`n==========================================================" -ForegroundColor Green
 Write-Host "✅ Done! Uninstallation successful." -ForegroundColor Green

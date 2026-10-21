@@ -82,10 +82,10 @@ $argocdPass = "P4ssw0rdArgoCD"
 Write-Host "`nLocking the ArgoCD admin password..." -ForegroundColor Green
 
 # Generate valid Bcrypt Hash natively
-$bcryptHash = kubectl exec -n argocd deploy/argocd-server -- argocd account bcrypt --password $argocdPass
-$bcryptHash = $bcryptHash.Trim()
-$encodedHash = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($bcryptHash))
-$encodedMtime = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes((Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")))
+$bcryptOutput = kubectl exec -n argocd deploy/argocd-server -- argocd account bcrypt --password $argocdPass 2>$null
+$bcryptHash = ($bcryptOutput | Select-Object -Last 1).Trim()
+$encodedHash = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($bcryptHash))
+$encodedMtime = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes((Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")))
 
 # Patch the ArgoCD Secret with a permanent hash
 $patchContent = "{ `"data`": { `"admin.password`": `"$encodedHash`", `"admin.passwordMtime`": `"$encodedMtime`" } }"
