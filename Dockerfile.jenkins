@@ -23,5 +23,5 @@ RUN curl --connect-timeout 10 --max-time 60 -fLO "https://dl.k8s.io/release/${KU
 
 # 4. Install ArgoCD CLI
 ARG ARGOCD_VERSION="v2.12.3"
-RUN curl -sSL -o /usr/local/bin/argocd https://github.com/argoproj/argo-cd/releases/download/${ARGOCD_VERSION}/argocd-linux-amd64 && \
+RUN curl --retry 3 --retry-delay 5 --connect-timeout 15 --max-time 120 -sSL -o /usr/local/bin/argocd https://github.com/argoproj/argo-cd/releases/download/${ARGOCD_VERSION}/argocd-linux-amd64 && \
     chmod +x /usr/local/bin/argocd

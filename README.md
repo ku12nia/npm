@@ -294,6 +294,9 @@ for ($i = 0; $i -lt $lines.Count; $i++) {
 # Clean unused containers, networks, and images
 docker system prune -a --volumes
 
+# Reset WSL2 Networking (If Docker Desktop on Windows experiences SSL/Network Timeout)
+wsl --shutdown
+
 # Fix Docker Desktop Windows DNS timeout bugs (Add to Docker Engine Settings JSON)
 "dns": ["8.8.8.8", "1.1.1.1"]
 ```
