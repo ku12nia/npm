@@ -82,137 +82,6 @@ if ([string]::IsNullOrWhiteSpace($jenkinsPass)) {
     $jenkinsPass = "InitAdminPassword has been performed; please log in using the credentials registered in Jenkins."
 }
 
-# --- Get Nexus Initial Password dengan Polling ---
-# $nexusId = docker ps -q --filter "name=nexus"
-# $nexusPass = ""
-
-# if ($nexusId) {
-#     Write-Host "⏳ Menunggu Nexus selesai booting dan men-generate password (bisa memakan waktu 1-2 menit)..." -ForegroundColor Magenta
-    
-#     $retryCount = 0
-#     $maxRetries = 18 # Maksimal menunggu 18 x 5 detik = 90 detik
-
-#     while ($retryCount -lt $maxRetries) {
-#         # Coba baca file password
-#         $rawNexusPass = docker exec $nexusId cat /nexus-data/admin.password 2>$null
-        
-#         # Jika berhasil membaca dan isinya bukan pesan error "No such file"
-#         if ($rawNexusPass -and $rawNexusPass -notmatch "No such file" -and -not [string]::IsNullOrWhiteSpace($rawNexusPass)) {
-#             $nexusPass = $rawNexusPass.Trim()
-#             Write-Host "✅ Password Nexus berhasil didapatkan!" -ForegroundColor Green
-#             break
-#         }
-        
-#         Start-Sleep -Seconds 5
-#         $retryCount++
-#     }
-# }
-
-# if ([string]::IsNullOrWhiteSpace($nexusPass)) {
-#     $nexusPass = "Password has been changed or check manually."
-# }
-
-
-Write-Host "`n==========================================================" -ForegroundColor Cyan
-Write-Host "📦 Mengunggah File Binary Lokal ke Nexus Repository" -ForegroundColor Yellow
-Write-Host "==========================================================" -ForegroundColor Cyan
-
-$binFolder = "$env:LOCAL_PROJECT_PATH\bin"
-$nexusUrl = "http://localhost:8082"
-$repoName = "raw-binaries"
-$nexusPass = $env:NEXUS_PASSWORD # <= menambahkan variable untuk pass nexus
-
-# if ($nexusPass -notmatch "Password has been changed") {
-#     Write-Host "Memeriksa dan membuat repository '$repoName' di Nexus..." -ForegroundColor Cyan
-#     $repoPayload = @{
-#         name = $repoName
-#         online = $true
-#         storage = @{
-#             blobStoreName = "default"
-#             strictContentTypeValidation = $false
-#         }
-#     } | ConvertTo-Json -Depth 10
-
-#     $base64AuthInfo = [Convert]::ToBase64String([System.Text.Encoding]::ASCII.GetBytes(("admin:{0}" -f $nexusPass)))
-#     $headers = @{Authorization=("Basic {0}" -f $base64AuthInfo)}
-    
-#     try {
-#         Invoke-RestMethod -Uri "$nexusUrl/service/rest/v1/repositories/raw/hosted" -Method Post -Headers $headers -ContentType "application/json" -Body $repoPayload -ErrorAction Stop | Out-Null
-#         Write-Host "✅ Repository '$repoName' berhasil dibuat." -ForegroundColor Green
-#     } catch {
-#         Write-Host "✅ Repository '$repoName' sudah tersedia." -ForegroundColor Green
-#     }
-
-#     if (Test-Path $binFolder) {
-#         $files = Get-ChildItem -Path $binFolder -File
-#         if ($files.Count -gt 0) {
-#             foreach ($file in $files) {
-#                 Write-Host "⬆️ Mengunggah $($file.Name) ke Nexus..." -ForegroundColor Yellow
-#                 $uploadUrl = "$nexusUrl/repository/$repoName/$($file.Name)"
-                
-#                 # Menggunakan curl.exe bawaan Windows (dengan -T untuk upload file)
-#                 curl.exe -s -u "admin:$nexusPass" -T "$($file.FullName)" "$uploadUrl"
-                
-#                 Write-Host "✅ Selesai mengunggah $($file.Name)." -ForegroundColor Green
-#             }
-#         } else {
-#             Write-Host "⚠️ Folder $binFolder kosong. Tidak ada yang diunggah." -ForegroundColor Yellow
-#         }
-#     } else {
-#         Write-Host "⚠️ Folder $binFolder tidak ditemukan. Lewati proses upload." -ForegroundColor Yellow
-#     }
-
-# } else {
-#     Write-Host "⚠️ Password Nexus tidak valid. Silakan upload file bin secara manual." -ForegroundColor Red
-# }
-
-
-if ([string]::IsNullOrWhiteSpace($nexusPass)) {
-    Write-Host "⚠️ NEXUS_PASSWORD tidak ditemukan di .env! Lewati proses upload otomatis." -ForegroundColor Red
-} else {
-    Write-Host "Memeriksa dan membuat repository '$repoName' di Nexus..." -ForegroundColor Cyan
-    
-    $repoPayload = @{
-        name = $repoName
-        online = $true
-        storage = @{
-            blobStoreName = "default"
-            strictContentTypeValidation = $false
-        }
-    } | ConvertTo-Json -Depth 10
-
-    $base64AuthInfo = [Convert]::ToBase64String([System.Text.Encoding]::ASCII.GetBytes(("admin:{0}" -f $nexusPass)))
-    $headers = @{Authorization=("Basic {0}" -f $base64AuthInfo)}
-    
-    try {
-        Invoke-RestMethod -Uri "$nexusUrl/service/rest/v1/repositories/raw/hosted" -Method Post -Headers $headers -ContentType "application/json" -Body $repoPayload -ErrorAction Stop | Out-Null
-        Write-Host "✅ Repository '$repoName' berhasil dibuat via API." -ForegroundColor Green
-    } catch {
-        Write-Host "✅ Repository '$repoName' sudah tersedia di sistem." -ForegroundColor Green
-    }
-
-    if (Test-Path $binFolder) {
-        $files = Get-ChildItem -Path $binFolder -File
-        if ($files.Count -gt 0) {
-            foreach ($file in $files) {
-                Write-Host "⬆️ Mengunggah $($file.Name) ke Nexus..." -ForegroundColor Yellow
-                $uploadUrl = "$nexusUrl/repository/$repoName/$($file.Name)"
-                
-                $curlResult = curl.exe -s -w "%{http_code}" -u "admin:$nexusPass" -T "$($file.FullName)" "$uploadUrl"
-                
-                if ($curlResult -match "200|201|204") {
-                    Write-Host "✅ Sukses mengunggah $($file.Name)." -ForegroundColor Green
-                } else {
-                    Write-Host "⚠️ Gagal mengunggah $($file.Name). HTTP Code: $curlResult" -ForegroundColor Red
-                }
-            }
-        } else {
-            Write-Host "⚠️ Folder $binFolder kosong." -ForegroundColor Yellow
-        }
-    } else {
-        Write-Host "⚠️ Folder $binFolder tidak ditemukan." -ForegroundColor Yellow
-    }
-}
 
 # -------------------------------------------------------------------------
 
@@ -436,6 +305,104 @@ if (-not $secretsObj.'secret/') {
 } else {
     Write-Host "✅ Path 'secret/' sudah aktif." -ForegroundColor Green
 }
+
+Write-Host "`nMenyimpan seluruh kredensial layanan & Jenkins ke dalam Vault..." -ForegroundColor Yellow
+
+# Layanan Infrastruktur & Data
+kubectl exec -n vault vault-0 -- vault kv put secret/database/postgres username="postgres" password="$env:POSTGRES_PASSWORD" | Out-Null
+kubectl exec -n vault vault-0 -- vault kv put secret/pgadmin admin_email="$env:PGADMIN_EMAIL" admin_password="$env:PGADMIN_PASSWORD" | Out-Null
+kubectl exec -n vault vault-0 -- vault kv put secret/minio root_user="$env:MINIO_ROOT_USER" root_password="$env:MINIO_ROOT_PASSWORD" | Out-Null
+kubectl exec -n vault vault-0 -- vault kv put secret/artemis admin_user="$env:ARTEMIS_USER" admin_password="$env:ARTEMIS_PASSWORD" | Out-Null
+
+# Layanan CI/CD & Monitoring
+kubectl exec -n vault vault-0 -- vault kv put secret/nexus admin_user="admin" admin_password="$env:NEXUS_PASSWORD" | Out-Null
+kubectl exec -n vault vault-0 -- vault kv put secret/argocd admin_user="admin" admin_password="$env:ARGOCD_PASSWORD" | Out-Null
+kubectl exec -n vault vault-0 -- vault kv put secret/grafana admin_user="admin" admin_password="$grafanaPass" | Out-Null
+kubectl exec -n vault vault-0 -- vault kv put secret/jenkins/admin admin_user="jenkins" admin_password="$env:JENKINS_PASSWORD" | Out-Null
+
+# Kredensial Eksternal untuk Pipeline Jenkins
+kubectl exec -n vault vault-0 -- vault kv put secret/jenkins/github username="$env:GITHUB_USER" token="$env:GITHUB_TOKEN" | Out-Null
+kubectl exec -n vault vault-0 -- vault kv put secret/jenkins/dockerhub username="$env:DOCKER_USER" password="$env:DOCKER_PASS" | Out-Null
+
+Write-Host "✅ Seluruh kredensial berhasil diekspor ke Vault KV (secret/)." -ForegroundColor Green
+
+# --- Eksekusi Upload Nexus di Tahap Akhir ---
+Write-Host "📦 Mengunggah File Binary Lokal ke Nexus Repository" -ForegroundColor Yellow
+
+$ProgressPreference = 'SilentlyContinue'
+$binFolder = "$env:LOCAL_PROJECT_PATH\bin"
+$nexusUrl = "http://127.0.0.1:8082"
+$repoName = "devops-tools"
+$nexusPass = $env:NEXUS_PASSWORD
+
+if ([string]::IsNullOrWhiteSpace($nexusPass)) {
+    Write-Host "⚠️ NEXUS_PASSWORD tidak ditemukan di .env! Lewati proses upload otomatis." -ForegroundColor Red
+} else {
+    Write-Host "Memeriksa dan membuat repository '$repoName' di Nexus..." -ForegroundColor Cyan
+    
+    $base64AuthInfo = [Convert]::ToBase64String([System.Text.Encoding]::ASCII.GetBytes(("admin:{0}" -f $nexusPass)))
+    $headers = @{
+        Authorization = ("Basic {0}" -f $base64AuthInfo)
+        "Content-Type" = "application/json"
+    }
+    
+    # [PERBAIKAN] Penambahan parameter `raw` dan `writePolicy` yang diwajibkan API Nexus 3
+    $repoPayload = @{
+        name = $repoName
+        online = $true
+        storage = @{
+            blobStoreName = "default"
+            strictContentTypeValidation = $false
+            writePolicy = "ALLOW"
+        }
+        raw = @{
+            contentDisposition = "ATTACHMENT"
+        }
+    } | ConvertTo-Json -Depth 10
+
+    $authFailed = $false
+    try {
+        Invoke-RestMethod -Uri "$nexusUrl/service/rest/v1/repositories/raw/hosted" -Method Post -Headers $headers -Body $repoPayload -ErrorAction Stop | Out-Null
+        Write-Host "✅ Repository '$repoName' berhasil dibuat via API." -ForegroundColor Green
+    } catch {
+        $statusCode = $_.Exception.Response.StatusCode.Value__
+        if ($statusCode -eq 401) {
+            Write-Host "❌ Autentikasi Gagal! Password Nexus salah. Pastikan NEXUS_PASSWORD di .env valid." -ForegroundColor Red
+            $authFailed = $true
+        } elseif ($statusCode -eq 400 -or $statusCode -eq 422) {
+            Write-Host "❌ Gagal membuat repository. Payload API ditolak Nexus." -ForegroundColor Red
+            $authFailed = $true
+        } else {
+            # 409 Conflict berarti repo memang sudah benar-benar ada
+            Write-Host "✅ Repository '$repoName' sudah tersedia di sistem." -ForegroundColor Green
+        }
+    }
+
+    if (-not $authFailed) {
+        if (Test-Path $binFolder) {
+            $files = Get-ChildItem -Path $binFolder -File
+            if ($files.Count -gt 0) {
+                foreach ($file in $files) {
+                    Write-Host "⬆️ Mengunggah $($file.Name) ke Nexus..." -ForegroundColor Yellow
+                    $uploadUrl = "$nexusUrl/repository/$repoName/$($file.Name)"
+                    
+                    $curlOutput = curl.exe --silent --show-error --fail -u "admin:$nexusPass" -T "$($file.FullName)" "$uploadUrl" 2>&1
+                    
+                    if ($LASTEXITCODE -eq 0) {
+                        Write-Host "✅ Sukses mengunggah $($file.Name)." -ForegroundColor Green
+                    } else {
+                        Write-Host "⚠️ Gagal mengunggah $($file.Name). Detail Error: $curlOutput" -ForegroundColor Red
+                    }
+                }
+            } else {
+                Write-Host "⚠️ Folder $binFolder kosong." -ForegroundColor Yellow
+            }
+        } else {
+            Write-Host "⚠️ Folder $binFolder tidak ditemukan." -ForegroundColor Yellow
+        }
+    }
+}
+$ProgressPreference = 'Continue'
 
 Write-Host "`n==========================================================" -ForegroundColor Green
 Write-Host "Done! Setup successful." -ForegroundColor Green
