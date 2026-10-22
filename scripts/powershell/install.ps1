@@ -37,7 +37,7 @@ if (-not (Get-Command helm -ErrorAction SilentlyContinue)) {
 Write-Host "`n==========================================================" -ForegroundColor Cyan
 Write-Host "1. Running Jenkins, PostgreSQL, and MinIO (Docker Compose)" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
-# Melakukan autentikasi ke Docker Hub dan menjalankan container untuk Jenkins, PostgreSQL, MinIO, serta Nexus.
+# Authenticates to Docker Hub and spins up containers for Jenkins, PostgreSQL, MinIO, and Nexus.
 if (-not [string]::IsNullOrWhiteSpace($env:DOCKER_USER) -and -not [string]::IsNullOrWhiteSpace($env:DOCKER_PASS)) {
     Write-Host "Logging in to Docker Hub as $($env:DOCKER_USER)..." -ForegroundColor Cyan
     $env:DOCKER_PASS | docker login --username $env:DOCKER_USER --password-stdin
@@ -51,7 +51,7 @@ if (-not [string]::IsNullOrWhiteSpace($env:DOCKER_USER) -and -not [string]::IsNu
     Write-Host "⚠️ DOCKER_USER or DOCKER_PASS not found in .env, skipping explicit login..." -ForegroundColor Yellow
 }
 
-# Memperbaiki izin akses kepemilikan direktori (CHOWN) pada volume Jenkins dan Nexus, lalu mengekstrak password admin inisial Jenkins langsung dari dalam container.
+# Fixes directory ownership permissions for Jenkins and Nexus volumes, then extracts the initial Jenkins admin password directly from inside the container.
 Write-Host "Fixing volume permissions for Jenkins..." -ForegroundColor Cyan
 docker run --rm -v npm_jenkins_home:/var/jenkins_home alpine chown -R 1000:1000 /var/jenkins_home 2>$null
 docker run --rm -v nexus_data:/nexus-data alpine chown -R 200:200 /nexus-data 2>$null
@@ -83,7 +83,7 @@ if ([string]::IsNullOrWhiteSpace($jenkinsPass)) {
 Write-Host "`n==========================================================" -ForegroundColor Cyan
 Write-Host "2. Setup Argo CD on Kubernetes (K3s)" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
-# Mendeploy ArgoCD ke klaster K3s dan menahan eksekusi (wait) hingga seluruh pod berstatus ready.
+# Deploys ArgoCD to the K3s cluster and waits until all pods achieve a ready state.
 kubectl create namespace argocd
 kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
 Write-Host "`nWaiting for Argo CD pods to become ready (this takes a few minutes)..." -ForegroundColor Magenta
@@ -91,7 +91,7 @@ kubectl wait --for=condition=ready pod --all -n argocd --timeout=300s
 $argocdPass = "P4ssw0rdArgoCD"
 Write-Host "`nLocking the ArgoCD admin password..." -ForegroundColor Green
 
-#Men-generate password admin ArgoCD menggunakan hash Bcrypt secara native, memperbarui K8s secret, mengaplikasikan manifest Ingress, dan me-restart pod untuk menerapkan perubahan.
+#Generates a custom ArgoCD admin password using native Bcrypt hashing, patches the Kubernetes secret, applies the Ingress manifest, and restarts the pod to apply changes.
 $bcryptOutput = kubectl exec -n argocd deploy/argocd-server -- argocd account bcrypt --password $argocdPass 2>$null
 $bcryptHash = ($bcryptOutput | Select-Object -Last 1).Trim()
 $encodedHash = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($bcryptHash))
@@ -111,7 +111,7 @@ kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=argocd-server -
 Write-Host "[SUCCESS] Password ArgoCD berhasil dikunci mati menjadi: $argocdPass" -ForegroundColor Green
 
 
-# Mengeksekusi instalasi K3s secara berurutan untuk Nginx Ingress Controller, PGAdmin, stack pemantauan (Prometheus & Grafana), komponen HashiCorp Vault, dan message broker ActiveMQ Artemis melalui Helm.
+# Sequentially executes K3s installations via Helm for the Nginx Ingress Controller, PGAdmin, the monitoring stack (Prometheus & Grafana), HashiCorp Vault, and the ActiveMQ Artemis message broker.
 Write-Host "`n==========================================================" -ForegroundColor Cyan
 Write-Host "3. Setup Nginx Ingress Controller (Core Networking)" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
@@ -169,7 +169,6 @@ helm upgrade --install vault hashicorp/vault -n vault `
 Write-Host "`n==========================================================" -ForegroundColor Cyan
 Write-Host "7. Setup ActiveMQ Artemis on Kubernetes (K3s via Helm)" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
-Write-Host "Creating 'artemis' namespace..." -ForegroundColor Cyan
 helm repo add vromero https://vromero.github.io/activemq-artemis-helm/
 helm repo update
 
@@ -206,9 +205,8 @@ if ($encodedGrafana) {
     $grafanaPass = "prom-operator" 
 }
 
-# Membersihkan sisa instalasi atau Persistent Volume Claim (PVC) Vault versi sebelumnya untuk mencegah status sealed yang terkunci, lalu mendeploy ulang Vault.
 # 1. Complete cleanup of global resources & legacy namespaces
-Write-Host "Membersihkan resource global dan instalasi Vault sebelumnya..." -ForegroundColor Cyan
+Write-Host "Cleaning up global resources and previous Vault installations." -ForegroundColor Cyan
 helm uninstall vault -n vault --no-hooks --ignore-not-found 2>$null
 kubectl delete namespace vault --force --grace-period=0 --ignore-not-found 2>$null
 kubectl delete mutatingwebhookconfiguration vault-agent-injector-cfg --ignore-not-found 2>$null
@@ -220,9 +218,9 @@ $keyFile = "vault-keys.json"
 if (Test-Path $keyFile) {
     try {
         Remove-Item $keyFile -Force -ErrorAction Stop
-        Write-Host "✅ Berhasil menghapus file kunci lama ($keyFile)." -ForegroundColor Green
+        Write-Host "✅ Successfully deleted the old lock file ($keyFile)." -ForegroundColor Green
     } catch {
-        Write-Host "⚠️ Gagal menghapus $keyFile, file mungkin sedang digunakan proses lain." -ForegroundColor Yellow
+        Write-Host "⚠️ Failed to delete $keyFile; the file may be in use by another process." -ForegroundColor Yellow
     }
 }
 # 3. Recreate the namespace and run Helm install
@@ -239,7 +237,7 @@ helm upgrade --install vault hashicorp/vault -n vault `
     --set "ui.serviceType=LoadBalancer" `
     --set "ui.externalPort=8200"
 
-# Mengeksekusi inisialisasi cluster (1 key share), menyimpan root token ke vault-keys.json, melakukan proses unseal secara otomatis, dan mengaktifkan KV v2 Secrets Engine.
+# Executes cluster initialization (1 key share), saves the root token to vault-keys.json, performs an automatic unseal, and enables the KV v2 Secrets Engine.
 Write-Host "`nWaiting for Vault pod to be created..." -ForegroundColor Magenta
 Start-Sleep -Seconds 10
 kubectl wait --for=condition=ready pod/vault-0 -n vault --timeout=120s
@@ -247,16 +245,16 @@ Write-Host "`nChecking Vault Initialization and Seal Status..." -ForegroundColor
 $vaultStatusJson = kubectl exec -n vault vault-0 -- vault status -format=json 2>$null
 $vaultStatus = $vaultStatusJson | ConvertFrom-Json
 if ($vaultStatus.initialized -eq $false) {
-    Write-Host "⚙️ Vault belum di-inisialisasi. Memulai proses init (1 Key Share)..." -ForegroundColor Cyan
+    Write-Host "⚙️ Vault has not been initialized. Starting the initialization process (1 Key Share)." -ForegroundColor Cyan
     $initResult = kubectl exec -n vault vault-0 -- vault operator init -key-shares=1 -key-threshold=1 -format=json
     $initResult | Out-File -FilePath $keyFile -Encoding utf8
-    Write-Host "✅ Vault di-inisialisasi! Kunci baru disimpan di '$keyFile'." -ForegroundColor Green
+    Write-Host "✅ Vault initialized! New key stored in '$keyFile'." -ForegroundColor Green
 } else {
-    Write-Host "✅ Vault sudah terinisialisasi sebelumnya." -ForegroundColor Green
+    Write-Host "✅ Vault has already been initialized." -ForegroundColor Green
 }
 # Reading tokens and keys from a new local file
 if (-not (Test-Path $keyFile)) {
-    Write-Host "❌ File $keyFile tidak ditemukan! Tidak bisa melakukan Unseal." -ForegroundColor Red
+    Write-Host "❌ File $keyFile not found! Unable to perform unseal." -ForegroundColor Red
     exit
 }
 $vaultKeys = Get-Content $keyFile | ConvertFrom-Json
@@ -266,26 +264,26 @@ $VaultRootToken = $vaultKeys.root_token
 $vaultStatusJson = kubectl exec -n vault vault-0 -- vault status -format=json 2>$null
 $vaultStatus = $vaultStatusJson | ConvertFrom-Json
 if ($vaultStatus.sealed -eq$true) {
-    Write-Host "🔐 Vault dalam keadaan Terkunci (Sealed). Melakukan Unseal otomatis..." -ForegroundColor Cyan
+    Write-Host "🔐 Vault is in a Sealed state. Performing automatic unseal." -ForegroundColor Cyan
     kubectl exec -n vault vault-0 -- vault operator unseal $unsealKey | Out-Null
-    Write-Host "🔓 Vault berhasil di-Unseal!" -ForegroundColor Green
+    Write-Host "🔓 Vault successfully unsealed!" -ForegroundColor Green
 } else {
-    Write-Host "🔓 Vault sudah dalam keadaan terbuka (Unsealed)." -ForegroundColor Green
+    Write-Host "🔓 The vault is already in an unsealed state.." -ForegroundColor Green
 }
 
-Write-Host "`nMemeriksa dan mengaktifkan KV Secrets Engine di path 'secret/'..." -ForegroundColor Yellow
+Write-Host "`nChecking and enabling the KV Secrets Engine at the path 'secret/'" -ForegroundColor Yellow
 kubectl exec -n vault vault-0 -- vault login $VaultRootToken | Out-Null
 $secretsList = kubectl exec -n vault vault-0 -- vault secrets list -format=json 2>$null
 $secretsObj = $secretsList | ConvertFrom-Json
 if (-not $secretsObj.'secret/') {
-    Write-Host "⚙️ Path 'secret/' belum aktif. Mengaktifkan KV v2 Engine..." -ForegroundColor Cyan
+    Write-Host "⚙️ The 'secret/' path is not yet active. Activating the KV v2 engine." -ForegroundColor Cyan
     kubectl exec -n vault vault-0 -- vault secrets enable -path=secret -version=2 kv | Out-Null
-    Write-Host "✅ KV v2 Engine berhasil diaktifkan di 'secret/'!" -ForegroundColor Green
+    Write-Host "✅ KV v2 Engine successfully activated in 'secret/'!" -ForegroundColor Green
 } else {
-    Write-Host "✅ Path 'secret/' sudah aktif." -ForegroundColor Green
+    Write-Host "✅ Path 'secret/' already active." -ForegroundColor Green
 }
 
-Write-Host "`nMenyimpan seluruh kredensial layanan & Jenkins ke dalam Vault..." -ForegroundColor Yellow
+Write-Host "`nStoring all service & Jenkins credentials into Vault." -ForegroundColor Yellow
 # Infrastructure & Data Services
 kubectl exec -n vault vault-0 -- vault kv put secret/database/postgres username="postgres" password="$env:POSTGRES_PASSWORD" | Out-Null
 kubectl exec -n vault vault-0 -- vault kv put secret/pgadmin admin_email="$env:PGADMIN_EMAIL" admin_password="$env:PGADMIN_PASSWORD" | Out-Null
@@ -300,18 +298,19 @@ kubectl exec -n vault vault-0 -- vault kv put secret/jenkins/admin admin_user="j
 kubectl exec -n vault vault-0 -- vault kv put secret/jenkins/github username="$env:GITHUB_USER" token="$env:GITHUB_TOKEN" | Out-Null
 kubectl exec -n vault vault-0 -- vault kv put secret/jenkins/dockerhub username="$env:DOCKER_USER" password="$env:DOCKER_PASS" | Out-Null
 kubectl exec -n vault vault-0 -- vault kv put secret/argocd admin_user="admin" admin_password="$argocdPass" | Out-Null
-Write-Host "✅ Seluruh kredensial berhasil diekspor ke Vault KV (secret/)." -ForegroundColor Green
+Write-Host "✅ All credentials have been successfully exported to the KV Vault (secret/)." -ForegroundColor Green
 
-Write-Host "📦 Mengunggah File Binary Lokal ke Nexus Repository" -ForegroundColor Yellow
+Write-Host "📦 Uploading Local Binary Files to Nexus Repository" -ForegroundColor Yellow
+# Communicates with the local Nexus REST API to create a raw-type repository named raw-binaries and Uploads local binary files from the bin folder to the Nexus repository using curl.
 $ProgressPreference = 'SilentlyContinue'
 $binFolder = "$env:LOCAL_PROJECT_PATH\bin"
 $nexusUrl = "http://127.0.0.1:8082"
 $repoName = "raw-binaries"
 $nexusPass = $env:NEXUS_PASSWORD
 if ([string]::IsNullOrWhiteSpace($nexusPass)) {
-    Write-Host "⚠️ NEXUS_PASSWORD tidak ditemukan di .env! Lewati proses upload otomatis." -ForegroundColor Red
+    Write-Host "⚠️ NEXUS_PASSWORD not found in .env! Skipping the automatic upload process." -ForegroundColor Red
 } else {
-    Write-Host "Memeriksa dan membuat repository '$repoName' di Nexus..." -ForegroundColor Cyan
+    Write-Host "Checking and creating repository '$repoName' in Nexus." -ForegroundColor Cyan
     $base64AuthInfo = [Convert]::ToBase64String([System.Text.Encoding]::ASCII.GetBytes(("admin:{0}" -f $nexusPass)))
     $headers = @{
         Authorization = ("Basic {0}" -f $base64AuthInfo)
@@ -333,41 +332,41 @@ if ([string]::IsNullOrWhiteSpace($nexusPass)) {
     $authFailed = $false
     try {
         Invoke-RestMethod -Uri "$nexusUrl/service/rest/v1/repositories/raw/hosted" -Method Post -Headers $headers -Body $repoPayload -ErrorAction Stop | Out-Null
-        Write-Host "✅ Repository '$repoName' berhasil dibuat via API." -ForegroundColor Green
+        Write-Host "✅ Repository '$repoName' successfully created via API." -ForegroundColor Green
     } catch {
         $statusCode = $_.Exception.Response.StatusCode.Value__
         if ($statusCode -eq 401) {
-            Write-Host "❌ Autentikasi Gagal! Password Nexus salah. Pastikan NEXUS_PASSWORD di .env valid." -ForegroundColor Red
+            Write-Host "❌ Authentication Failed! The Nexus password is incorrect. Ensure that NEXUS_PASSWORD in the .env file is valid." -ForegroundColor Red
             $authFailed = $true
         } elseif ($statusCode -eq 400 -or $statusCode -eq 422) {
-            Write-Host "❌ Gagal membuat repository. Payload API ditolak Nexus." -ForegroundColor Red
+            Write-Host "❌ Failed to create repository. API payload rejected by Nexus." -ForegroundColor Red
             $authFailed = $true
         } else {
-            Write-Host "✅ Repository '$repoName' sudah tersedia di sistem." -ForegroundColor Green
+            Write-Host "✅ Repository '$repoName' already available in the system." -ForegroundColor Green
         }
     }
-    
+
     if (-not $authFailed) {
         if (Test-Path $binFolder) {
             $files = Get-ChildItem -Path $binFolder -File
             if ($files.Count -gt 0) {
                 foreach ($file in $files) {
-                    Write-Host "⬆️ Mengunggah $($file.Name) ke Nexus..." -ForegroundColor Yellow
+                    Write-Host "⬆️ Uploading $($file.Name) to Nexus." -ForegroundColor Yellow
                     $uploadUrl = "$nexusUrl/repository/$repoName/$($file.Name)"
                     
                     $curlOutput = curl.exe --silent --show-error --fail -u "admin:$nexusPass" -T "$($file.FullName)" "$uploadUrl" 2>&1
                     
                     if ($LASTEXITCODE -eq 0) {
-                        Write-Host "✅ Sukses mengunggah $($file.Name)." -ForegroundColor Green
+                        Write-Host "✅ Successfully uploaded $($file.Name)." -ForegroundColor Green
                     } else {
-                        Write-Host "⚠️ Gagal mengunggah $($file.Name). Detail Error: $curlOutput" -ForegroundColor Red
+                        Write-Host "⚠️ Failed to upload $($file.Name). Error details: $curlOutput" -ForegroundColor Red
                     }
                 }
             } else {
-                Write-Host "⚠️ Folder $binFolder kosong." -ForegroundColor Yellow
+                Write-Host "⚠️ Folder $binFolder is empty." -ForegroundColor Yellow
             }
         } else {
-            Write-Host "⚠️ Folder $binFolder tidak ditemukan." -ForegroundColor Yellow
+            Write-Host "⚠️ Folder $binFolder not found." -ForegroundColor Yellow
         }
     }
 }

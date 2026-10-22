@@ -1,17 +1,17 @@
 pipeline {
     agent any
-    
+    // Parameters: Prompts the user to select the target environment (dev, staging, or prod), specify an IMAGE_TAG_TO_PROMOTE when deploying to upper environments, and indicate if the Docker Hub repository is private
     parameters {
         choice(name: 'DEPLOY_ENV', choices: ['dev', 'staging', 'prod'], description: 'Select the target environment for deployment.')
         string(name: 'IMAGE_TAG_TO_PROMOTE', defaultValue: '', description: 'Enter the Image Tag from the stable Dev/Staging environment. Leave blank if env = dev.')
         booleanParam(name: 'IS_PRIVATE_REPO', defaultValue: false, description: 'Check this box if the Docker Hub repository is private.')
     }
-    
+    // Options: Uses buildDiscarder with logRotator to keep only the last 10 build logs, preventing the Jenkins server disk from filling up.
     options {
         buildDiscarder(logRotator(numToKeepStr: '10'))
     }
-    
     stages {
+        // Stage 0. Setup Build Name: Formats the build number (padding it to two digits) and customizes the build display name in the Jenkins dashboard (e.g., #01 - dev).
         stage('0. Setup Build Name') {
             steps {
                 script {
@@ -20,16 +20,15 @@ pipeline {
                 }
             }
         }
-        
+        // Stage 1. Checkout Code: Determines the target GitHub branch based on the deployment environment (main for production, or the respective environment name for dev/staging). It also supports a local directory mode if LOCAL_SRC_PATH is configured.
         stage('1. Checkout Code') {
             steps {
                 script {
                     def targetBranch = (params.DEPLOY_ENV == 'prod') ? 'main' : params.DEPLOY_ENV
-                    
                     if (env.LOCAL_SRC_PATH) {
                         echo "💻 Local Directory Mode Active!"
                         if (!fileExists('Jenkinsfile')) {
-                            error("❌ Workspace kosong! Pastikan repo sudah di-clone ke folder Windows host.")
+                            error("❌ Workspace is empty! Ensure the repo has been cloned into the Windows host folder.")
                         } else {
                             echo "✅ Local source code is ready to build."
                         }
@@ -49,16 +48,16 @@ pipeline {
                                     credentialsId: 'github-creds'
                                 ]]
                             ])
-                            echo "✅ Berhasil checkout dari branch: ${targetBranch}."
+                            echo "✅ Successfully checked out from branch: ${targetBranch}."
                         } catch (Exception e) {
-                            echo "❌ Gagal checkout kode dari branch: ${targetBranch}."
-                            error("Pipeline dihentikan karena checkout repositori gagal: ${e.getMessage()}")
+                            echo "❌ Failed to check out code from branch: ${targetBranch}."
+                            error("Pipeline stopped because the repository checkout failed: ${e.getMessage()}")
                         }
                     }
                 }
             }
         }
-
+        // Stage 2. Test App via Docker: Runs exclusively in the dev environment. It spins up a temporary node:22-alpine container to install dependencies and execute unit tests via Jest, publishing the JUnit XML test results.
         stage('2. Test App via Docker') {
             when {
                 environment name: 'DEPLOY_ENV', value: 'dev'
@@ -66,7 +65,7 @@ pipeline {
             steps {
                 script {
                     def containerId = sh(script: 'hostname', returnStdout: true).trim()
-                    echo "🛠️ Menjalankan Unit Tests via Docker (Container ID: ${containerId})..."
+                    echo "🛠️ Running Unit Tests via Docker (Container ID: ${containerId})..."
                     
                     dir('src') {
                         sh """
@@ -84,53 +83,51 @@ pipeline {
                 success {
                     script {
                         if (fileExists('src/junit.xml')) {
-                            try { junit 'src/junit.xml' } catch (e) { echo "⚠️ JUnit report tidak valid, dilewati..." }
+                            try { junit 'src/junit.xml' } catch (e) { echo "⚠️ Unit report is invalid, skipping." }
                         }
                     }
                 }
             }
         }
-        
+        // Stage 3. Approval Gate (Production): Pauses the pipeline for up to 1 hour, requiring manual approval from an administrator before allowing any deployment to proceed to production.
         stage('3. Approval Gate (Production)') {
             when {
                 environment name: 'DEPLOY_ENV', value: 'prod'
             }
             steps {
                 script {
-                    echo "Menunggu persetujuan (Approval) untuk deploy ke Production..."
+                    echo "Waiting approval to deploy to Production."
                     timeout(time: 1, unit: 'HOURS') {
                         input(
                             id: 'DeployToProd',
-                            message: "⚠️ Lanjutkan deployment ke PRODUCTION menggunakan image tag: ${params.IMAGE_TAG_TO_PROMOTE}?",
+                            message: "⚠️ Proceed with deployment to PRODUCTION using the image tag: ${params.IMAGE_TAG_TO_PROMOTE}?",
                             ok: 'Approve & Deploy'
                         )
                     }
-                    echo "✅ Deployment ke Production disetujui!"
+                    echo "✅ Deployment to production approved!"
                 }
             }
         }
-
+        // Stage 4. Build / Promote & Push Docker Image: For Dev: Pulls the previous dev image for cache reference and For Staging/Prod: Skips building entirely. Instead, it pulls the stable image specified by IMAGE_TAG_TO_PROMOTE
         stage('4. Build / Promote & Push Docker Image') {
             steps {
                 script {
                     def targetEnv = params.DEPLOY_ENV
                     def imageRepo = "ku12nia/nodejs" 
                     def newImageTag = "${env.PADDED_BUILD_NUMBER}-${targetEnv}"
-                    
                     dir('src') {
+                        // For Dev: Pulls the previous dev image for cache reference, builds a new Docker image using BuildKit caching (--cache-from), and pushes it to Docker Hub.
                         if (targetEnv == 'dev') {
-                            echo "🔍 Menarik image dev sebelumnya untuk referensi cache..."
-                            // Menggunakan || true agar pipeline tidak gagal jika image dev-cache belum pernah ada di registry (run pertama)
+                            echo "🔍 Pulling the previous dev image for cache reference."
                             sh "docker pull ${imageRepo}:dev-cache || true"
-                            
-                            echo "🏗️ Membangun Docker image baru (menggunakan Cache BuildKit)..."
-                            // Tambahkan flag --cache-from, --build-arg BUILDKIT_INLINE_CACHE=1, dan tag dev-cache
-                            sh "DOCKER_BUILDKIT=1 docker build --cache-from ${imageRepo}:dev-cache --build-arg BUILDKIT_INLINE_CACHE=1 -t ${imageRepo}:${newImageTag} -t ${imageRepo}:dev-cache ."            
+                            echo "🏗️ Building a new Docker image (using BuildKit cache)."
+                            sh "DOCKER_BUILDKIT=1 docker build --cache-from ${imageRepo}:dev-cache --build-arg BUILDKIT_INLINE_CACHE=1 -t ${imageRepo}:${newImageTag} -t ${imageRepo}:dev-cache ."
+                        //  For Staging/Prod: Skips building entirely. Instead, it pulls the stable image specified by IMAGE_TAG_TO_PROMOTE, re-tags it for the target environment, and pushes it.             
                         } else {
                             if (!params.IMAGE_TAG_TO_PROMOTE?.trim()) {
-                                error("❌ Deployment ke ${targetEnv} dibatalkan! Parameter 'IMAGE_TAG_TO_PROMOTE' wajib diisi dengan image tag yang sudah stable (misal: 01-dev).")
+                                error("❌ Deployment to ${targetEnv} has been cancelled! The 'IMAGE_TAG_TO_PROMOTE' parameter must be provided with a stable image tag (e.g., 01-dev).")
                             }
-                            echo "🔄 Mempromosikan image stable (Tag: ${params.IMAGE_TAG_TO_PROMOTE}) ke env ${targetEnv}..."
+                            echo "🔄 Promote stable image (Tag: ${params.IMAGE_TAG_TO_PROMOTE}) to env ${targetEnv}."
                             
                             sh "docker pull ${imageRepo}:${params.IMAGE_TAG_TO_PROMOTE}"
                             sh "docker tag ${imageRepo}:${params.IMAGE_TAG_TO_PROMOTE} ${imageRepo}:${newImageTag}"
@@ -140,8 +137,10 @@ pipeline {
                             }
                         }
                     }
-                    
-                    echo "🔐 Melakukan autentikasi otomatis ke Docker Hub..."
+                    //  Environment-Specific Routing:
+                    //  If dev: The pipeline pushes an additional dev-cache tag. This acts as a caching reference for Docker BuildKit, which significantly speeds up subsequent image builds in the development environment.
+                    //  If prod: The pipeline pushes an additional latest tag. This guarantees that the production repository always has a definitive pointer to the most recent stable release. It also includes error handling to abort if the latest push fails.
+                    echo "🔐 Performing automatic authentication to Docker Hub."
                     withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', passwordVariable: 'DOCKER_PASS', usernameVariable: 'DOCKER_USER')]) {
                         def loginStatus = sh(
                             script: """
@@ -150,19 +149,15 @@ pipeline {
                             """, 
                             returnStatus: true
                         )
-                        
                         if (loginStatus != 0) {
                             error("❌ Gagal login ke Docker Hub! Cek kredensial 'dockerhub-creds'.")
                         }
-                        
                         echo "🚀 Pushing image tag: ${newImageTag} ke Docker Hub..."
                         def pushStatus = sh(script: "docker push ${imageRepo}:${newImageTag}", returnStatus: true)
                         
                         if (pushStatus != 0) {
                             error("❌ Gagal push image tag ${newImageTag} ke Docker Hub! Pipeline dihentikan.")
                         }
-                        
-                        // Push tambahan sesuai environment untuk kebutuhan referensi ke depannya
                         if (targetEnv == 'dev') {
                             echo "🚀 Pushing image cache referensi (dev-cache)..."
                             sh "docker push ${imageRepo}:dev-cache"
