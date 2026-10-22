@@ -36,15 +36,22 @@ if (Get-Command helm -ErrorAction SilentlyContinue) {
 Write-Host "`n==========================================================" -ForegroundColor Cyan
 Write-Host "🗑️ 3. Removing HashiCorp Vault" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
+
 if (Get-Command helm -ErrorAction SilentlyContinue) {
     Write-Host "Uninstalling vault Helm release..."
     helm uninstall vault -n vault --ignore-not-found=true
     
+    Write-Host "Menghapus Persistent Volume (PVC) milik Vault..." -ForegroundColor Cyan
+    kubectl delete pvc data-vault-0 -n vault --ignore-not-found=true
+    
     Write-Host "Deleting namespace vault..."
-    kubectl delete namespace vault --ignore-not-found=true
+    kubectl delete namespace vault --force --grace-period=0 --ignore-not-found=true
 } else {
     Write-Host "Helm is not installed, skipping Vault cleanup." -ForegroundColor Yellow
 }
+
+Write-Host "Membersihkan sisa file kunci Vault lokal..." -ForegroundColor Cyan
+Remove-Item "vault-keys.json" -ErrorAction SilentlyContinue
 
 Write-Host "`n==========================================================" -ForegroundColor Cyan
 Write-Host "🗑️ 4. Removing PGAdmin" -ForegroundColor Yellow

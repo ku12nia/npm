@@ -79,6 +79,14 @@ These components run inside the Kubernetes cluster to mimic production-grade orc
 Before running the local infrastructure installation, create a `.env` file in the root directory (`npm/.env`):
 
 ```env
+# --- Artemis ---
+ARTEMIS_USER=admin
+ARTEMIS_PASSWORD=artemisadmin
+
+# --- ArgoCD ---
+ARGOCD_USER=admin
+ARGOCD_PASSWORD=P4ssw0rdArgoCD
+
 # --- Database ---
 POSTGRES_PASSWORD=pg-local
 
@@ -86,17 +94,17 @@ POSTGRES_PASSWORD=pg-local
 PGADMIN_EMAIL=dedimk.devops@gmail.com
 PGADMIN_PASSWORD=pgadmin-local
 
+# --- Docker Hub & GitHub Credentials ---
+DOCKER_USER=ku12nia
+DOCKER_PASS=[YOUR PAT DOCKER]
+
 # --- MinIO ---
 MINIO_ROOT_USER=admin
 MINIO_ROOT_PASSWORD=minioadmin
 
-# --- Artemis ---
-ARTEMIS_USER=admin
-ARTEMIS_PASSWORD=artemisadmin
-
-# --- Docker Hub & GitHub Credentials ---
-DOCKER_USER=ku12nia
-DOCKER_PASS=[YOUR PAT DOCKER]
+# --- Nexus Artifactory ---
+NEXUS_USERNAME=admin
+NEXUS_PASSWORD=P4ssw0rdNexus
 
 # --- Jenkins & ArgoCD Access ---
 JENKINS_PASSWORD=jenkins
@@ -108,9 +116,6 @@ WORKSPACE_DIR=/var/jenkins_home/workspace/npm-cicd
 
 # Absolute path to project folder on Host Windows/Linux
 LOCAL_PROJECT_PATH=C:/Users/evoel/Downloads/labs_dedi/npm
-
-# --- Nexus Artifactory ---
-NEXUS_PASSWORD=P4ssw0rdNexus
 ```
 
 ---
