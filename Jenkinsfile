@@ -140,75 +140,151 @@ pipeline {
                     //  Environment-Specific Routing:
                     //  If dev: The pipeline pushes an additional dev-cache tag. This acts as a caching reference for Docker BuildKit, which significantly speeds up subsequent image builds in the development environment.
                     //  If prod: The pipeline pushes an additional latest tag. This guarantees that the production repository always has a definitive pointer to the most recent stable release. It also includes error handling to abort if the latest push fails.
+
                     echo "🔐 Performing automatic authentication to Docker Hub."
                     withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', passwordVariable: 'DOCKER_PASS', usernameVariable: 'DOCKER_USER')]) {
-                        def loginStatus = sh(
-                            script: """
+                        try {
+                            // Docker Login.
+                            sh '''
                                 set +x
-                                echo "\$DOCKER_PASS" | docker login -u "\$DOCKER_USER" --password-stdin
-                            """, 
-                            returnStatus: true
-                        )
-                        if (loginStatus != 0) {
-                            error("❌ Gagal login ke Docker Hub! Cek kredensial 'dockerhub-creds'.")
-                        }
-                        echo "🚀 Pushing image tag: ${newImageTag} ke Docker Hub..."
-                        def pushStatus = sh(script: "docker push ${imageRepo}:${newImageTag}", returnStatus: true)
-                        
-                        if (pushStatus != 0) {
-                            error("❌ Gagal push image tag ${newImageTag} ke Docker Hub! Pipeline dihentikan.")
-                        }
-                        if (targetEnv == 'dev') {
-                            echo "🚀 Pushing image cache referensi (dev-cache)..."
-                            sh "docker push ${imageRepo}:dev-cache"
-                        } else if (targetEnv == 'prod') {
-                            echo "🚀 Pushing image latest..."
-                            def pushLatest = sh(script: "docker push ${imageRepo}:latest", returnStatus: true)
-                            if (pushLatest != 0) {
-                                error("❌ Gagal push image 'latest'. Pipeline dihentikan.")
+                                echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+                            '''
+                            echo "🚀 Pushing image tag: ${newImageTag} ke Docker Hub..."
+                            sh "docker push ${imageRepo}:${newImageTag}"
+                            
+                            if (targetEnv == 'dev') {
+                                echo "🚀 Pushing image cache referensi (dev-cache)."
+                                sh "docker push ${imageRepo}:dev-cache"
+                            } else if (targetEnv == 'prod') {
+                                echo "🚀 Pushing image latest..."
+                                sh "docker push ${imageRepo}:latest"
                             }
+                        } catch (Exception e) {
+                            error("❌ Process Docker push failed: ${e.getMessage()}")
+                        } finally {
+                            // Always execute Logout, even if the push fails.
+                            sh "docker logout"
+                            echo "🔒 Docker logged out successfully. State cleaned."
                         }
                     } 
+ 
+                    // echo "🔐 Performing automatic authentication to Docker Hub."
+                    // withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', passwordVariable: 'DOCKER_PASS', usernameVariable: 'DOCKER_USER')]) {
+                    //     def loginStatus = sh(
+                    //         script: """
+                    //             set +x
+                    //             echo "\$DOCKER_PASS" | docker login -u "\$DOCKER_USER" --password-stdin
+                    //         """, 
+                    //         returnStatus: true
+                    //     )
+                    //     if (loginStatus != 0) {
+                    //         error("❌ Failed to log in to Docker Hub! Check the 'dockerhub-creds' credentials.")
+                    //     }
+                    //     echo "🚀 Pushing image tag: ${newImageTag} ke Docker Hub..."
+                    //     def pushStatus = sh(script: "docker push ${imageRepo}:${newImageTag}", returnStatus: true)
+                        
+                    //     if (pushStatus != 0) {
+                    //         error("❌ Failed to push image tag ${newImageTag} to Docker Hub! Pipeline stopped.")
+                    //     }
+                    //     if (targetEnv == 'dev') {
+                    //         echo "🚀 Pushing image cache referensi (dev-cache)."
+                    //         sh "docker push ${imageRepo}:dev-cache"
+                    //     } else if (targetEnv == 'prod') {
+                    //         echo "🚀 Pushing image latest..."
+                    //         def pushLatest = sh(script: "docker push ${imageRepo}:latest", returnStatus: true)
+                    //         if (pushLatest != 0) {
+                    //             error("❌ Failed to push the 'latest' image. Pipeline stopped.")
+                    //         }
+                    //     }
+                    // }
+
                 }
             }
         }
-        
+        // Stage 5: Update Manifest & Push to Gi. This stage automates the GitOps workflow by updating your infrastructure repository to point to the newly built Docker image. Update: Replaces the old image tag in the Helm values.yaml file with the new one, Commit & Push: Pushes the updated file to GitHub. It uses [skip ci] in the commit message to prevent Jenkins from triggering another build in an infinite loop, and Cleanup: Removes the Git credentials from the Jenkins server to keep the environment clean (stateless)
         stage('5. Update Manifest & Push ke Git') {
             steps {
                 script {
                     def targetEnv = params.DEPLOY_ENV
                     def targetBranch = (targetEnv == 'prod') ? 'main' : targetEnv
                     def newImageTag = "${env.PADDED_BUILD_NUMBER}-${targetEnv}"
-                    def targetValuesFile = "k8s/helm-chart/values-${targetEnv}.yaml" // <-- Target file dinamis
+                    def targetValuesFile = "k8s/helm-chart/values-${targetEnv}.yaml"
                     
-                    echo "✨ Mengupdate ${targetValuesFile} pada branch: ${targetBranch}"
-                    
+                    echo """
+                    ==========================================================
+                    🚀 [GIT OPS] UPDATING HELM MANIFEST
+                    ==========================================================
+                    📌 Target Env   : ${targetEnv}
+                    📌 Target File  : ${targetValuesFile}
+                    🌿 Target Branch: ${targetBranch}
+                    🏷️  New Image Tag: ${newImageTag}
+                    ==========================================================
+                    """
+                    // 1. Modify values ​​files using sed
                     sh "sed -i 's/tag: .*/tag: \"${newImageTag}\"/g' ${targetValuesFile}"
-                    
+                    echo "✅ File ${targetValuesFile} has been successfully updated with tag: ${newImageTag}"
+                    // 2. Set up local Git configuration in the Jenkins workspace
                     sh 'git config --global user.email "dedimk.devops@gmail.com"'
                     sh 'git config --global user.name "Dedi Mohammad Kurnia"'
-                    
+                    // 3. Checking Git status (porcelain returns an empty string if clean)
                     def changes = sh(script: 'git status --porcelain', returnStdout: true).trim()
-                    
-                    if (changes != "") {
-                        sh "git add ${targetValuesFile}" // <-- Dynamic git add
+                    if (changes) {
+                        echo "🔍 File changes detected:\n${changes}"
+                        echo "⚙️ Performing commit & push process."
+                        sh "git add ${targetValuesFile}" 
                         sh "git commit -m 'ci(argocd): update helm image tag for ${targetEnv} to ${newImageTag} [skip ci]'"
-                        
+                        // 4. Push to GitHub with credentials
                         withCredentials([gitUsernamePassword(credentialsId: 'github-creds')]) {
                             def gitPushStatus = sh(script: "git push origin HEAD:${targetBranch}", returnStatus: true)
                             if (gitPushStatus == 0) {
-                                echo "🚀 Berhasil push update manifest Helm ke branch GitHub ${targetBranch}!"
+                                echo "🎉 [SUCCESS] Successfully pushed Helm manifest update to the branch: ${targetBranch}!"
                             } else {
-                                unstable("⚠️ WARNING: Gagal push ke GitHub.")
+                                unstable("⚠️ [WARNING] Failed to push to GitHub. Check the logs or the 'github-creds' credentials.")
                             }
                         }
                     } else {
-                        echo "⚠️ Tidak ada perubahan pada manifest, melewatkan proses git commit."
+                        echo "⚠️ [SKIPPED] No changes to the manifest; skipping the git commit & push process."
                     }
                 }
             }
         }
 
+        // stage('5. Update Manifest & Push ke Git') {
+        //     steps {
+        //         script {
+        //             def targetEnv = params.DEPLOY_ENV
+        //             def targetBranch = (targetEnv == 'prod') ? 'main' : targetEnv
+        //             def newImageTag = "${env.PADDED_BUILD_NUMBER}-${targetEnv}"
+        //             def targetValuesFile = "k8s/helm-chart/values-${targetEnv}.yaml"
+                    
+        //             echo "✨ Updating ${targetValuesFile} on branch: ${targetBranch}"
+        //             sh "sed -i 's/tag: .*/tag: \"${newImageTag}\"/g' ${targetValuesFile}"
+
+        //             echo "✨ Updating ${targetValuesFile} on branch: ${targetBranch}"
+        //             sh 'git config --global user.email "dedimk.devops@gmail.com"'
+        //             sh 'git config --global user.name "Dedi Mohammad Kurnia"'
+        //             def changes = sh(script: 'git status --porcelain', returnStdout: true).trim()
+                    
+        //             if (changes != "") {
+        //                 sh "git add ${targetValuesFile}" // <-- Dynamic git add
+        //                 sh "git commit -m 'ci(argocd): update helm image tag for ${targetEnv} to ${newImageTag} [skip ci]'"
+                        
+        //                 withCredentials([gitUsernamePassword(credentialsId: 'github-creds')]) {
+        //                     def gitPushStatus = sh(script: "git push origin HEAD:${targetBranch}", returnStatus: true)
+        //                     if (gitPushStatus == 0) {
+        //                         echo "🚀 Berhasil push update manifest Helm ke branch GitHub ${targetBranch}!"
+        //                     } else {
+        //                         unstable("⚠️ WARNING: Gagal push ke GitHub.")
+        //                     }
+        //                 }
+        //             } else {
+        //                 echo "⚠️ Tidak ada perubahan pada manifest, melewatkan proses git commit."
+        //             }
+        //         }
+        //     }
+        // }
+
+        // Stage 6: Trigger ArgoCD Sync CLI. Setup: Securely logs into ArgoCD and ensures the application is registered to the correct GitHub repo and Kubernetes namespace, Sync: Forces an immediate deployment, bypassing ArgoCD's default 3-minute polling delay, Cleanup: Securely logs out of ArgoCD to destroy the active session token.
         stage('6. Trigger ArgoCD Sync CLI') {
             steps {
                 script {
@@ -219,45 +295,114 @@ pipeline {
                     def targetValuesFile = "values-${targetEnv}.yaml"
                     def argocdServer = "host.docker.internal:80"
                     
+                    // withCredentials([usernamePassword(credentialsId: 'argocd-creds', passwordVariable: 'ARGOCD_PASS', usernameVariable: 'ARGOCD_USER')]) {
+                    //     sh """
+                    //         set +x
+                    //         echo "🔐 Logging in to ArgoCD via CLI..."
+                    //         argocd login ${argocdServer} --username \$ARGOCD_USER --password \$ARGOCD_PASS --plaintext --grpc-web
+                            
+                    //         echo "📝 Ensuring application ${appName} is registered..."
+                    //         argocd app create ${appName} \
+                    //           --repo https://github.com/ku12nia/npm.git \
+                    //           --path k8s/helm-chart \
+                    //           --revision ${targetBranch} \
+                    //           --values ${targetValuesFile} \
+                    //           --dest-server https://kubernetes.default.svc \
+                    //           --dest-namespace ${namespace} \
+                    //           --sync-option CreateNamespace=true \
+                    //           --sync-option Replace=true \
+                    //           --upsert
+                            
+                    //         echo "🚀 Syncing application: ${appName}..."
+                    //         argocd app sync ${appName} --replace
+                    //     """
+                    // }
+                    // echo "🔄 ArgoCD synchronization was successful for ${appName}!"
+
                     withCredentials([usernamePassword(credentialsId: 'argocd-creds', passwordVariable: 'ARGOCD_PASS', usernameVariable: 'ARGOCD_USER')]) {
-                        sh """
-                            set +x
-                            echo "🔐 Logging in to ArgoCD via CLI..."
-                            argocd login ${argocdServer} --username \$ARGOCD_USER --password \$ARGOCD_PASS --plaintext --grpc-web
-                            
-                            echo "📝 Ensuring application ${appName} is registered..."
-                            argocd app create ${appName} \
-                              --repo https://github.com/ku12nia/npm.git \
-                              --path k8s/helm-chart \
-                              --revision ${targetBranch} \
-                              --values ${targetValuesFile} \
-                              --dest-server https://kubernetes.default.svc \
-                              --dest-namespace ${namespace} \
-                              --sync-option CreateNamespace=true \
-                              --sync-option Replace=true \
-                              --upsert
-                            
-                            echo "🚀 Syncing application: ${appName}..."
-                            argocd app sync ${appName} --replace
-                        """
+                        try {
+                            sh """
+                                set +x
+                                echo "🔐 Logging in to ArgoCD via CLI..."
+                                argocd login ${argocdServer} --username \$ARGOCD_USER --password \$ARGOCD_PASS --plaintext --grpc-web
+                                
+                                echo "📝 Ensuring application ${appName} is registered..."
+                                argocd app create ${appName} \
+                                  --repo https://github.com/ku12nia/npm.git \
+                                  --path k8s/helm-chart \
+                                  --revision ${targetBranch} \
+                                  --values ${targetValuesFile} \
+                                  --dest-server https://kubernetes.default.svc \
+                                  --dest-namespace ${namespace} \
+                                  --sync-option CreateNamespace=true \
+                                  --sync-option Replace=true \
+                                  --upsert
+                                
+                                echo "🚀 Syncing application: ${appName}..."
+                                argocd app sync ${appName} --replace
+                            """
+                            echo "🔄 ArgoCD synchronization was successful for ${appName}!"
+                        } finally {
+                            // Pastikan Logout setelah sync atau jika terjadi error
+                            sh "argocd logout ${argocdServer} || true"
+                            echo "🔒 ArgoCD logged out successfully. State cleaned."
+                        }
                     }
-                    echo "🔄 Sinkronisasi ArgoCD berhasil untuk ${appName}!"
                 }
             }
-        }
-        
+        // NEXT STAGE
     }    
     post {
         always {
             script {
+                // 1. Cleaning the Workspace (State Clean)
                 try {
-                    echo "🧹 Membersihkan workspace untuk menghindari disk penuh pada server."
-                    sh 'rm -rf node_modules coverage junit.xml docker.tgz docker'
-                    echo "✨ Workspace sudah bersih kembali!"
+                    echo "🧹 Cleaning up the workspace to prevent the server disk from becoming full."
+                    // sh 'rm -rf node_modules coverage junit.xml docker.tgz docker'
+                    cleanWs()
+                    echo "✨ Workspace cleaned successfully."
                 } catch (Exception e) {
-                    echo "⚠️ Cleanup dilewati karena workspace tidak siap."
+                    echo "⚠️ Cleanup was skipped because the workspace was not ready."
                 }
             }
+
+                // 2. Sending Telegram Notifications
+                try {
+                    echo "📱 Sending notification to Telegram..."
+
+                    // Get final build status
+                    def buildStatus = currentBuild.currentResult ?: 'SUCCESS'
+                    def statusEmoji = (buildStatus == 'SUCCESS') ? '✅' : '❌'
+                    def targetEnv = params.DEPLOY_ENV ?: 'N/A'
+                    
+                    // The message is formatted using Markdown
+                    def tgMessage = """
+${statusEmoji} *Jenkins Pipeline Update* ${statusEmoji}
+
+*Project:* ${env.JOB_NAME}
+*Build No:* #${env.BUILD_NUMBER}
+*Environment:* ${targetEnv}
+*Status:* ${buildStatus}
+
+[📝 Klik untuk melihat log build](${env.BUILD_URL})
+                    """
+                    // Retrieving a token from credentials
+                    withCredentials([string(credentialsId: 'telegram-bot-token', variable: 'TELEGRAM_TOKEN')]) {
+                        def chatId = "-1001234567890" // GANTI DENGAN CHAT ID GRUP/CHANNEL ANDA
+                        
+                        // Executing an API using curl
+                        sh """
+                            curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage" \
+                            -d chat_id="${chatId}" \
+                            -d parse_mode="Markdown" \
+                            --data-urlencode text="${tgMessage}"
+                        """
+                    }
+                    echo "📨 Telegram notification successfully sent."
+                } catch (Exception e) {
+                    echo "⚠️ Failed to send Telegram notification: ${e.getMessage()}"
+                }
+
         }
     }
 }

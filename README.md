@@ -106,11 +106,8 @@ MINIO_ROOT_PASSWORD=minioadmin
 NEXUS_USERNAME=admin
 NEXUS_PASSWORD=P4ssw0rdNexus
 
-# --- Jenkins & ArgoCD Access ---
+# --- Jenkins Access & Workspace ---
 JENKINS_PASSWORD=jenkins
-ARGOCD_PASSWORD=P4ssw0rdArgoCD
-
-# --- Jenkins Workspace ---
 WORKSPACE_NAME=npm-cicd
 WORKSPACE_DIR=/var/jenkins_home/workspace/npm-cicd
 

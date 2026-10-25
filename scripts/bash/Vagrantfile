@@ -1,0 +1,26 @@
+Vagrant.configure("2") do |config|
+  config.vm.box = "bento/ubuntu-26.04"
+
+  config.vm.provider "virtualbox" do |vb|
+    vb.name = "npm-cicd-vagrant"
+    vb.memory = "12288" # RAM 12 GB
+    vb.cpus = 6         # CPU 6 Cores
+  end
+  config.vm.synced_folder "../", "/workspace"
+  # --- Layanan Docker Compose ---
+  config.vm.network "forwarded_port", guest: 8080, host: 8080, id: "jenkins"
+  config.vm.network "forwarded_port", guest: 8082, host: 8082, id: "nexus"
+  config.vm.network "forwarded_port", guest: 5432, host: 5432, id: "postgres"
+  config.vm.network "forwarded_port", guest: 9001, host: 9001, id: "minio-console"
+  # --- Layanan K3s (Ingress & LoadBalancer) ---
+  config.vm.network "forwarded_port", guest: 80, host: 80, id: "ingress-http"
+  config.vm.network "forwarded_port", guest: 443, host: 443, id: "ingress-https"
+  config.vm.network "forwarded_port", guest: 8081, host: 8081, id: "pgadmin"
+  config.vm.network "forwarded_port", guest: 8083, host: 8083, id: "grafana"
+  config.vm.network "forwarded_port", guest: 9090, host: 9090, id: "prometheus"
+  config.vm.network "forwarded_port", guest: 8200, host: 8200, id: "vault"
+  config.vm.network "forwarded_port", guest: 8161, host: 8161, id: "artemis-ui"
+  config.vm.network "forwarded_port", guest: 61616, host: 61616, id: "artemis-broker"
+  # Eksekusi Setup saat `vagrant up`
+  config.vm.provision "shell", path: "bash/install.sh"
+end
