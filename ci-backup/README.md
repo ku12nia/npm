@@ -23,6 +23,7 @@ This project applies the principle of **Separation of Concerns**, splitting the 
 ### 1. Core Services (Docker Compose)
 These components run directly on the Docker engine to provide stable base services:
 - **Jenkins (CI Server):** Manages automated pipelines handling checkout, unit testing via Docker, building Docker images, pushing to Docker Hub, and updating environment-specific Helm manifests in Git.
+  * *Hybrid Build Approach:* Uses a dual-Dockerfile setup (`Dockerfile.win` for the Windows Host workflow and `Dockerfile.jenkins.vagrant` for the Linux VM workflow) to resolve OS-specific DNS (`host.docker.internal`) and offline binary dependencies flawlessly.
 - **Sonatype Nexus 3 (Artifactory):** Serves as a local repository manager (`raw-binaries`) hosting static binary files (such as `kubectl`, `argocd`, `buildx`, and `docker.tgz`). Uploads are automatically executed near the end of initialization to prevent boot timeouts.
 - **PostgreSQL (Database):** Serves as the primary relational database system for application workloads.
 - **MinIO (Object Storage):** Provides S3-compatible local object storage for file uploads, backups, and artifact storage.
@@ -71,7 +72,8 @@ These components run inside the Kubernetes cluster to mimic production-grade orc
  ┃ ┗ 📜 Dockerfile         
  ┣ 📜 docker-compose.yml   
  ┣ 📜 .env                 # MUST be created before running installation scripts
- ┗ 📜 Dockerfile.jenkins
+ ┣ 📜 Dockerfile.win       # Jenkins Dockerfile for Windows Host workflow
+ ┗ 📜 Dockerfile.linux     # Jenkins Dockerfile for Linux Host workflow
 ```
 
 ---

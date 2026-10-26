@@ -1,7 +1,8 @@
 FROM jenkins/jenkins
 USER root
 
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+# Parameter -o Acquire::Check-Valid-Until=false -o Acquire::Check-Date=false => akan memutus blokir validasi tanggal GPG pada apt-get sehingga proses pembentukan image npm-jenkins berjalan sampai selesai.
+RUN apt-get -o Acquire::Check-Valid-Until=false -o Acquire::Check-Date=false update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
 ENV NEXUS_RAW_URL="http://host.docker.internal:8082/repository/raw-binaries"
 

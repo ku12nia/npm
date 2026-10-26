@@ -1,9 +1,10 @@
 services:
 # --- JENKINS ---
   jenkins:
+    image: npm-jenkins
     build: 
       context: .
-      dockerfile: Dockerfile.jenkins
+      dockerfile: Dockerfile.win
     container_name: jenkins-local
     ports:
       - "8080:8080"

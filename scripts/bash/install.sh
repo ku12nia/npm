@@ -32,14 +32,15 @@ if ! command -v helm &> /dev/null; then
     curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
 fi
 
-echo "Installing K3s (Tanpa Traefik karena Anda menggunakan Nginx Ingress)..."
+echo "Installing K3s (with Nginx Ingress)"
 if ! command -v k3s &> /dev/null; then
     curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable traefik" sh -
     mkdir -p /home/vagrant/.kube
     cp /etc/rancher/k3s/k3s.yaml /home/vagrant/.kube/config
     chown -R vagrant:vagrant /home/vagrant/.kube
-    export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
 fi
+
+export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
 sleep 10 # Tunggu K3s siap
 
 echo -e "\n=========================================================="
@@ -56,9 +57,14 @@ docker run --rm -v nexus_data:/nexus-data alpine chown -R 200:200 /nexus-data 2>
 composeImageName="npm-jenkins"
 if [ -z "$(docker images -q $composeImageName 2>/dev/null)" ]; then
     echo "⚙️ Image not yet available locally. Initiating build."
-    docker compose up -d --build
+    docker build -t npm-jenkins -f Dockerfile.linux . || exit 1
+    export USERPROFILE="/home/vagrant"
+    export LOCAL_PROJECT_PATH="/workspace"
+    docker compose up -d
 else
     echo "✅ Image '$composeImageName' Already available. Launching."
+    export USERPROFILE="/home/vagrant"
+    export LOCAL_PROJECT_PATH="/workspace"
     docker compose up -d
 fi
 
@@ -204,8 +210,22 @@ if [ -n "$NEXUS_PASSWORD" ]; then
     fi
 fi
 
+grafanaPass=$(kubectl get secret prometheus-stack-grafana -n monitoring -o jsonpath="{.data.admin-password}" 2>/dev/null | base64 -d)
+[ -z "$grafanaPass" ] && grafanaPass="prom-operator"
+
 echo -e "\n=========================================================="
 echo "Done! Setup successful."
-echo "Jenkins InitAdmin : $jenkinsPass"
-echo "Vault Root Token  : $VaultRootToken"
+echo "=========================================================="
+echo "ACCESS YOUR SERVICES:"
+echo " - Jenkins    : http://localhost:8080 (Login: jenkins / jenkins)"
+echo "   InitAdmin  : $jenkinsPass"
+echo " - Nexus 3    : http://localhost:8082 (User: admin, Pass: $NEXUS_PASSWORD)"
+echo " - Argo CD    : https://localhost (User: admin, Pass: $argocdPass)"
+echo " - Artemis    : http://localhost:8161 (User: $ARTEMIS_USER, Pass: $ARTEMIS_PASSWORD)"
+echo " - Grafana    : http://localhost:8083 (User: admin, Pass: $grafanaPass)"
+echo " - Prometheus : http://localhost:9090"
+echo " - PGAdmin    : http://localhost:8081 (User: $PGADMIN_EMAIL, Pass: $PGADMIN_PASSWORD)"
+echo " - PostgreSQL : localhost:5432 (User: postgres, Pass: $POSTGRES_PASSWORD)"
+echo " - MinIO      : http://localhost:9001 (User: $MINIO_ROOT_USER, Pass: $MINIO_ROOT_PASSWORD)"
+echo " - Vault      : http://localhost:8200 (Token: $VaultRootToken)"
 echo "=========================================================="

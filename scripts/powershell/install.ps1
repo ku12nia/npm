@@ -61,6 +61,7 @@ Write-Host "🔍 Checking the availability of a custom Docker image ($composeIma
 $imageExists = docker images -q $composeImageName 2>$null
 if ([string]::IsNullOrWhiteSpace($imageExists)) {
     Write-Host "⚙️ Image not yet available locally. Initiating initial build process." -ForegroundColor Cyan
+    # docker build -t npm-jenkins -f Dockerfile.win .
     docker compose up -d --build
 } else {
     Write-Host "✅ Image '$composeImageName' Already available. Launching the container immediately." -ForegroundColor Green
