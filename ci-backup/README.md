@@ -154,16 +154,33 @@ You can run this ecosystem using either the **Vagrant Workflow** (fully isolated
 
 ### Option A: The Vagrant Workflow (Recommended)
 Ensure you have installed **VirtualBox** and **HashiCorp Vagrant**.
-1. Open your terminal (PowerShell, CMD, or Git Bash).
-2. Navigate to the directory containing the `Vagrantfile`:
+
+1. Open your terminal (PowerShell, CMD, or Git Bash) and navigate to the `scripts/bash` directory:
    ```bash
    cd scripts/bash
    ```
-3. Boot the environment. Vagrant will automatically download Ubuntu, configure port-forwarding, install Docker & K3s natively, and run the `install.sh` provisioning script.
+
+2. **Vagrant Management & Lifecycle Commands:**
+   - `vagrant up`: Boots the VM, configures port forwarding, and mounts synced folders.
+   - `vagrant up --debug`: Boots the VM with verbose debug logging (useful for troubleshooting SSH or boot timeouts).
+   - `vagrant halt`: Gracefully shuts down the virtual machine.
+   - `vagrant resume`: Resumes a suspended virtual machine.
+   - `vagrant reload`: Restarts the VM and re-applies any changes made to `Vagrantfile`.
+
+3. **Access VM via SSH:**
    ```bash
-   vagrant up
+   vagrant ssh
    ```
-   *(Note: The first run will take several minutes to download the OS image and containers).*
+   *(Note: Default credentials if logging in directly via VirtualBox GUI are **Username:** `vagrant`, **Password:** `vagrant`)*
+
+4. **Execute Provisioning Script Inside VM:**
+   Once inside the VM, switch to root user, navigate to the synced script directory, fix Windows line endings (CRLF to LF), and execute the installer:
+   ```bash
+   sudo su
+   cd /workspace/scripts/bash
+   sed -i -e 's/\r$//' install.sh
+   ./install.sh
+   ```
 
 ### Option B: Windows Host (PowerShell + Docker Desktop)
 Ensure **Kubernetes** is enabled in your Docker Desktop settings.
