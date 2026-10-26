@@ -7,7 +7,7 @@ echo "=========================================================="
 apt-get update && apt-get install -y curl jq dos2unix apt-transport-https ca-certificates software-properties-common
 
 # Masuk ke direktori yang disinkronisasi dengan Windows
-cd /vagrant
+cd /workspace
 
 if [ -f ".env" ]; then
     echo "Loading environment variables from .env file..."
@@ -193,8 +193,8 @@ if [ -n "$NEXUS_PASSWORD" ]; then
     curl -s -o /dev/null -w "%{http_code}" -X POST "$nexusUrl/service/rest/v1/repositories/raw/hosted" \
       -u "admin:$NEXUS_PASSWORD" -H "Content-Type: application/json" -d "$repoPayload"
       
-    if [ -d "/vagrant/bin" ]; then
-        for file in /vagrant/bin/*; do
+    if [ -d "/workspace/bin" ]; then
+        for file in /workspace/bin/*; do
             if [ -f "$file" ]; then
                 filename=$(basename "$file")
                 echo "⬆️ Uploading $filename to Nexus."
