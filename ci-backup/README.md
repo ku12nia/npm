@@ -9,7 +9,7 @@
 ![Grafana](https://img.shields.io/badge/Grafana-Dashboard-F46800?logo=grafana)
 [![LinkedIn](https://img.shields.io/badge/Connect-LinkedIn-0A66C2?logo=linkedin)](https://www.linkedin.com/in/dedimohammadkurnia/)
 
-This repository provides a ready-to-use **Full-Stack Local DevOps & GitOps** ecosystem. It integrates a modern CI/CD pipeline using Jenkins, local database management (PostgreSQL + pgAdmin), HashiCorp Vault for secrets management, monitoring with Prometheus & Grafana, message brokering with ActiveMQ, object storage with MinIO, a local artifactory via **Sonatype Nexus**, and automated deployments to Kubernetes using **ArgoCD** following the **App of Apps** pattern. The entire infrastructure is designed to run seamlessly on top of **Docker Desktop**.
+This repository provides a ready-to-use **Full-Stack Local DevOps & GitOps** ecosystem. It integrates a modern CI/CD pipeline using Jenkins, local database management (PostgreSQL + pgAdmin), HashiCorp Vault for automated secrets management, monitoring with Prometheus & Grafana, message brokering with ActiveMQ, object storage with MinIO, a local artifactory via **Sonatype Nexus 3**, and automated deployments to Kubernetes using **ArgoCD** following the **App of Apps** pattern. The entire infrastructure is designed to run seamlessly on top of **Docker Desktop (K3s)**.
 
 ---
 
@@ -20,16 +20,16 @@ This project applies the principle of **Separation of Concerns**, splitting the 
 ### 1. Core Services (Docker Compose)
 These components run directly on the Docker engine to provide stable base services:
 - **Jenkins (CI Server):** Manages automated pipelines handling checkout, unit testing via Docker, building Docker images, pushing to Docker Hub, and updating environment-specific Helm manifests in Git.
-- **Sonatype Nexus 3 (Artifactory):** Serves as a local repository manager for caching Docker images, npm packages, and hosting raw binary files (like `kubectl` and `argocd` CLI) to mitigate network timeouts during offline builds.
-- **PostgreSQL (Database):** Serves as the primary relational database system for the application workloads.
-- **MinIO (Object Storage):** Provides an S3-compatible local object storage for file uploads, backups, or artifact storage.
+- **Sonatype Nexus 3 (Artifactory):** Serves as a local repository manager (`raw-binaries`) hosting static binary files (such as `kubectl`, `argocd`, `buildx`, and `docker.tgz`). Uploads are automatically executed near the end of initialization to prevent boot timeouts.
+- **PostgreSQL (Database):** Serves as the primary relational database system for application workloads.
+- **MinIO (Object Storage):** Provides S3-compatible local object storage for file uploads, backups, and artifact storage.
 
 ### 2. Kubernetes Services (K3s via Docker Desktop)
 These components run inside the Kubernetes cluster to mimic production-grade orchestration:
 - **ArgoCD (Continuous Deployment):** Acts as the primary GitOps controller. Monitors the `k8s/` directory in Git and synchronizes manifest changes directly into target namespaces (`dev-apps`, `staging-apps`, `prod-apps`).
+- **HashiCorp Vault:** Deployed via Helm with persistent storage (1Gi PVC). Automatically initialized, unsealed, and pre-populated (*auto-seeded*) with all service credentials and pipeline secrets under the `secret/` KV v2 engine.
 - **pgAdmin (Database Manager):** Deployed via Helm to provide a web-based GUI for managing PostgreSQL (connected via `host.docker.internal`).
-- **ActiveMQ Artemis (Message Broker):** Deployed via native manifests to handle asynchronous messaging.
-- **HashiCorp Vault:** Injecting dynamic secrets directly into Node.js deployment pods via the Vault Agent Injector.
+- **ActiveMQ Artemis (Message Broker):** Deployed via Helm (`artemis` namespace) to handle asynchronous messaging.
 - **Monitoring Stack (Prometheus & Grafana):** Deployed via `kube-prometheus-stack` Helm chart to automatically scrape cluster metrics, monitor pod health, and visualize system performance.
 
 ---
@@ -40,7 +40,7 @@ These components run inside the Kubernetes cluster to mimic production-grade orc
 📦 npm
  ┣ 📂 ci                   
  ┃ ┗ 📜 Jenkinsfile        
- ┣ 📂 config               
+  📂 config               
  ┃ ┣ 📜 postgres17-connect.json
  ┃ ┣ 📜 prometheus.yml
  ┃ ┗ 📜 pgadmin.json
@@ -49,7 +49,7 @@ These components run inside the Kubernetes cluster to mimic production-grade orc
  ┃ ┣ 📂 argocd-apps        
  ┃ ┃ ┗ 📜 node-app-dev.yaml
  ┃ ┗ 📂 helm-chart
- ┃   ┣ 📂 templates        
+ ┃    📂 templates        
  ┃   ┃ ┣ 📜 deployment.yaml
  ┃   ┃ ┣ 📜 service.yaml
  ┃   ┃ ┗ 📜 ingress.yaml
@@ -62,7 +62,7 @@ These components run inside the Kubernetes cluster to mimic production-grade orc
  ┃ ┃ ┣ 📜 install.sh
  ┃ ┃ ┗ 📜 uninstall.sh
  ┃ ┗ 📂 powershell
- ┃   ┣ 📜 install.ps1        
+ ┃   ┣ 📜 install.ps1      # Automated setup script (Docker + K3s + Vault Auto-Seed)
  ┃   ┗ 📜 uninstall.ps1        
  ┣ 📂 src                  
  ┃ ┣ 📜 index.js, package.json
@@ -76,9 +76,17 @@ These components run inside the Kubernetes cluster to mimic production-grade orc
 
 ## ⚙️ Environment Variables (.env Setup)
 
-Before running the local infrastructure using Docker Compose, create a `.env` file in the root directory (`npm/.env`):
+Before running the local infrastructure installation, create a `.env` file in the root directory (`npm/.env`):
 
 ```env
+# --- Artemis ---
+ARTEMIS_USER=admin
+ARTEMIS_PASSWORD=artemisadmin
+
+# --- ArgoCD ---
+ARGOCD_USER=admin
+ARGOCD_PASSWORD=P4ssw0rdArgoCD
+
 # --- Database ---
 POSTGRES_PASSWORD=pg-local
 
@@ -86,27 +94,25 @@ POSTGRES_PASSWORD=pg-local
 PGADMIN_EMAIL=dedimk.devops@gmail.com
 PGADMIN_PASSWORD=pgadmin-local
 
+# --- Docker Hub & GitHub Credentials ---
+DOCKER_USER=ku12nia
+DOCKER_PASS=[YOUR PAT DOCKER]
+
 # --- MinIO ---
 MINIO_ROOT_USER=admin
 MINIO_ROOT_PASSWORD=minioadmin
 
-# --- Artemis ---
-ARTEMIS_USER=admin
-ARTEMIS_PASSWORD=artemisadmin
+# --- Nexus Artifactory ---
+NEXUS_USERNAME=admin
+NEXUS_PASSWORD=P4ssw0rdNexus
 
-# --- Docker Hub Credentials ---
-DOCKER_USER=ku12nia
-DOCKER_PASS=[YOUR PAT DOCKER]
-
-# --- Jenkins Workspace ---
+# --- Jenkins Access & Workspace ---
+JENKINS_PASSWORD=jenkins
 WORKSPACE_NAME=npm-cicd
 WORKSPACE_DIR=/var/jenkins_home/workspace/npm-cicd
 
 # Absolute path to project folder on Host Windows/Linux
 LOCAL_PROJECT_PATH=C:/Users/evoel/Downloads/labs_dedi/npm
-
-# --- Nexus Artifactory ---
-NEXUS_PASSWORD=P4ssw0rdNexus
 ```
 
 ---
@@ -158,25 +164,67 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 
 ---
 
-## 🌐 Accessing Services
+## 🌐 Accessing Services & Auto-Seeded Credentials
 
-- **Jenkins:** `http://localhost:8080`
-  - Required credentials in Jenkins Store (`Username with password`):
-    - `dockerhub-creds`
-    - `github-creds` (Use GitHub Personal Access Token)
-    - `argocd-creds`
-- **Nexus Repository:** `http://localhost:8082` (User: `admin`, Password: `generated during install`)
-- **ArgoCD Dashboard:** `http://argocd.local` (Username: `admin`, Password: `P4ssw0rdArgoCD`)
-- **pgAdmin:** `http://localhost:8081` (Host: `host.docker.internal`)
-- **HashiCorp Vault:** `http://localhost:8200` (Token: `root`)
-- **Grafana:** `http://localhost:8083` (User: `admin`, Password shown in terminal output)
+Upon successful execution of `install.ps1`, all service credentials are automatically injected into **HashiCorp Vault KV v2** (`secret/`):
+
+- **Jenkins:** `http://localhost:8080` (User: `jenkins`, Pass: `jenkins`)
+  - Configured Credentials Store: `dockerhub-creds`, `github-creds`, `argocd-creds`.
+- **Nexus 3:** `http://localhost:8082` (User: `admin`, Pass: `P4ssw0rdNexus` / value in `.env`)
+- **ArgoCD Dashboard:** `https://localhost` (User: `admin`, Pass: `P4ssw0rdArgoCD`)
+- **HashiCorp Vault:** `http://localhost:8200` 
+  - **Root Token:** Saved automatically in `vault-keys.json` in root workspace and printed in terminal logs upon setup completion.
+- **Grafana:** `http://localhost:8083` (User: `admin`, Password extracted dynamically from K8s secret)
 - **Prometheus:** `http://localhost:9090`
+- **ActiveMQ Artemis:** `http://localhost:8161` (User: `admin`, Pass: `artemisadmin`)
+- **pgAdmin:** `http://localhost:8081` (User: `dedimk.devops@gmail.com`, Pass: `pgadmin-local`)
+- **PostgreSQL:** `localhost:5432` (User: `postgres`, Pass: `pg-local`)
+- **MinIO:** `http://localhost:9001` (User: `admin`, Pass: `minioadmin`)
+
+---
+
+## 🔐 Automated Vault Secrets Structure
+
+The automated setup populates Vault KV Engine (`secret/`) with the following schema:
+
+```text
+secret/
+ ┣ 📂 database/postgres  -> { username, password }
+ ┣ 📂 pgadmin           -> { admin_email, admin_password }
+ ┣ 📂 minio             -> { root_user, root_password }
+ ┣ 📂 artemis           -> { admin_user, admin_password }
+ ┣ 📂 nexus             -> { admin_user, admin_password }
+ ┣ 📂 argocd            -> { admin_user, admin_password }
+ ┣ 📂 grafana           -> { admin_user, admin_password }
+ ┣ 📂 jenkins/
+ ┃ ┣ 📜 admin           -> { admin_user, admin_password }
+ ┃ ┣ 📜 github          -> { username, token }
+ ┃ ┗ 📜 dockerhub       -> { username, password }
+```
 
 ---
 
 ## 🛠 Troubleshooting & Operations Guide
 
-### 1. CI/CD Strategy: Image Promotion & Multi-Environment
+### 1. Automated Vault Re-initialization & Unseal
+If Vault pods restart or the environment is re-deployed, `install.ps1` automatically reads `vault-keys.json`, executes the unseal operation, and verifies the KV v2 engine state.
+* **Force Reset Vault:** To wipe and re-create Vault cleanly:
+  ```powershell
+  helm uninstall vault -n vault --no-hooks --ignore-not-found
+  kubectl delete namespace vault --force --grace-period=0
+  Remove-Item "vault-keys.json" -ErrorAction SilentlyContinue
+  ```
+
+---
+
+### 2. Offline Mitigation & Local Artifactory (Nexus)
+To prevent network timeouts (e.g., connection refused or HTTP 000 errors) during Jenkins image builds:
+* The PowerShell installation script leverages the Nexus REST API to automatically create a `raw-binaries` repository near the end of environment initialization (Step 8). 
+* Local binary files (`argocd-linux-amd64`, `kubectl`, `buildx`, `docker.tgz`) stored in `$env:LOCAL_PROJECT_PATH\bin` are uploaded automatically using `curl.exe` with `--fail` validation.
+
+---
+
+### 3. CI/CD Strategy: Image Promotion & Multi-Environment
 To maintain production stability, the pipeline follows the **Build Once, Deploy Anywhere** pattern:
 * **Dev Environment (`dev`):** Jenkins checks out source code, runs unit tests, builds the Docker image (e.g. `01-dev`), pushes to Docker Hub, and updates `values-dev.yaml`.
 * **Staging / Production (`staging` / `prod`):** **No rebuilds allowed.** Pipeline accepts `IMAGE_TAG_TO_PROMOTE` (e.g. `01-dev`), pulls the stable image, re-tags it (e.g. `01-staging` or `01-prod`), and updates `values-staging.yaml` / `values-prod.yaml`.
@@ -188,20 +236,9 @@ To maintain production stability, the pipeline follows the **Build Once, Deploy 
 
 ---
 
-### 2. Offline Mitigation & Local Artifactory (Nexus)
-To prevent network timeouts (e.g., unexpected eof) during Jenkins image builds:
-* The PowerShell installation script leverages the Nexus REST API to automatically create a raw-binaries repository. Binary files (like argocd-linux-amd64, kubectl, docker.tgz) stored in the local bin/ directory are auto-uploaded to Nexus during environment initialization. The Dockerfile.jenkins is configured to pull these files directly from the local Nexus proxy (http://nexus:8081/repository/raw-binaries/...) instead of external GitHub/Docker servers.
-
----
-
-### 3. Resolving ArgoCD OutOfSync & Kubernetes Deployment Errors
+### 4. Resolving ArgoCD OutOfSync & Kubernetes Deployment Errors
 
 #### A. Error: `spec.selector: field is immutable`
-* **Root Cause:** Kubernetes `spec.selector` on Deployment specs cannot be patched on existing deployments if label definitions change.
-* **Fix (One-time Cleanup):** Delete the existing Deployment object directly from the cluster so ArgoCD can recreate it with updated selectors:
-  ```bash
-  kubectl delete deployment node-app -n dev-apps
-  ```
 * **Fix (Pipeline-level):** Pass `--replace` or `--sync-option Replace=true` during ArgoCD CLI sync execution:
   ```bash
   argocd app sync node-app-dev --replace
@@ -215,42 +252,14 @@ To prevent network timeouts (e.g., unexpected eof) during Jenkins image builds:
     --upsert
   ```
 
-#### C. Error: `PermissionDenied` on ArgoCD CLI
-* **Fix:** Update `argocd-rbac-cm` ConfigMap policy to allow admin role or elevate default policy for lab environments:
-  ```yaml
-  data:
-    policy.csv: |
-      p, role:admin, *, *, *, allow
-      g, admin, role:admin
-    policy.default: role:admin
-  ```
-
 ---
 
-### 4. Resolving Jenkins Test & Build Counter Issues
+### 5. Resolving Jenkins Test & Build Counter Issues
 
-#### A. Issue: "No tests found" & Invalid JUnit XML
-* **Root Cause:** Jest runs with `--passWithNoTests`, but outputs a zero-test XML (`tests="0"`), causing the Jenkins JUnit parser plugin to throw an error.
-* **Fix:** Add a valid test file at `src/index.test.js`:
-  ```javascript
-  test('validates CI unit testing pipeline', () => {
-      expect(true).toBe(true);
-  });
-  ```
-
-#### B. Resetting Jenkins Build Number Counter
+#### A. Resetting Jenkins Build Number Counter
 If build numbers get out of sync or you need to reset back to `#01-dev`:
-
 1. Open **Jenkins -> Manage Jenkins -> Script Console**.
-2. **Option A: Safe Reset (To Next Number #100)**
-   ```groovy
-   def job = Jenkins.instance.getItem("npm-cicd")
-   job.nextBuildNumber = 100
-   job.saveNextBuildNumber()
-   println "Next build number set to: ${job.nextBuildNumber}"
-   ```
-3. **Option B: Clean Reset back to #1 (Purging Old Builds)**
-   *Note: You MUST delete old build directories (`#1` to `#99`) first, or Jenkins will silently fail when attempting to overwrite existing build folders.*
+2. Run script to clear build history and reset counter:
    ```groovy
    def job = Jenkins.instance.getItem("npm-cicd")
    job.builds.each { it.delete() }
@@ -261,54 +270,13 @@ If build numbers get out of sync or you need to reset back to `#01-dev`:
 
 ---
 
-### 5. Vault Re-installation Conflicts (Forbidden StatefulSet Updates)
-If you encounter server-side apply failed or MutatingWebhookConfiguration conflicts when re-running the installation script, it means cluster-wide resources from a previous Vault installation are locked. Run this Deep Clean snippet:
-
-```powershell
-# Deep Clean Vault Cluster-Wide Resources
-helm uninstall vault -n vault --no-hooks --ignore-not-found
-kubectl delete namespace vault --force --grace-period=0
-kubectl delete mutatingwebhookconfiguration vault-agent-injector-cfg --ignore-not-found
-kubectl delete validatingwebhookconfiguration vault-agent-injector-webhook --ignore-not-found
-kubectl delete clusterrole vault-agent-injector-clusterrole --ignore-not-found
-kubectl delete clusterrolebinding vault-agent-injector-clusterrolebinding --ignore-not-found
-kubectl delete pvc --all -n vault --ignore-not-found
-Remove-Item "vault-keys.json" -ErrorAction SilentlyContinue
-```
-
----
-
-### 6. PowerShell Script Syntax & Encoding Issues (Windows)
-
-If you encounter syntax errors, hanging executions, or broken special characters/emojis when running `install.ps1` on Windows, check for unclosed quotes and improper file encoding:
-
-#### A. Checking for Unclosed Double Quotes
-Run the following debug snippet in PowerShell to scan `install.ps1` for unbalanced double quotes:
-
-```powershell
-$lines = Get-Content .\scripts\powershell\install.ps1
-for ($i = 0; $i -lt $lines.Count; $i++) {
-    $lineNum = $i + 1
-    $lineText = $lines[$i]
-    $quoteCount = ($lineText.Split('"').Count - 1)
-    if ($quoteCount % 2 -ne 0) {
-        Write-Host "🚨 Unbalanced quotes ($quoteCount) at Line ${lineNum}: $lineText" -ForegroundColor Red
-    }
-}
-```
-
----
-
-### 7. Docker & System Maintenance
+### 6. Docker & System Maintenance
 ```bash
 # Clean unused containers, networks, and images
 docker system prune -a --volumes
 
 # Reset WSL2 Networking (If Docker Desktop on Windows experiences SSL/Network Timeout)
 wsl --shutdown
-
-# Fix Docker Desktop Windows DNS timeout bugs (Add to Docker Engine Settings JSON)
-"dns": ["8.8.8.8", "1.1.1.1"]
 ```
 
 ---
