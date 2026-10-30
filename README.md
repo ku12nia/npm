@@ -8,6 +8,7 @@
 ![Vault](https://img.shields.io/badge/Vault-Secrets-FF0000?logo=vault)
 ![Prometheus](https://img.shields.io/badge/Prometheus-Monitoring-E6522C?logo=prometheus)
 ![Grafana](https://img.shields.io/badge/Grafana-Dashboard-F46800?logo=grafana)
+![Artemis](https://img.shields.io/badge/ActiveMQ_Artemis-Message_Broker-D22128?logo=apache&logoColor=white)
 [![LinkedIn](https://img.shields.io/badge/Connect-LinkedIn-0A66C2?logo=linkedin)](https://www.linkedin.com/in/dedimohammadkurnia/)
 
 This repository provides a ready-to-use **Full-Stack Local DevOps & GitOps** ecosystem. It integrates a modern CI/CD pipeline using Jenkins, local database management (PostgreSQL + pgAdmin), HashiCorp Vault for automated secrets management, monitoring with Prometheus & Grafana, message brokering with ActiveMQ, object storage with MinIO, a local artifactory via **Sonatype Nexus 3**, and automated deployments to Kubernetes using **ArgoCD** following the **App of Apps** pattern. 
@@ -49,31 +50,31 @@ These components run inside the Kubernetes cluster to mimic production-grade orc
  ┃ ┣ 📜 prometheus.yml
  ┃ ┗ 📜 pgadmin.json
  ┣ 📂 k8s
- ┃ ┣ 📜 argocd.yaml        # ArgoCD Ingress, RBAC, & Root App
+ ┃ ┣ 📜 argocd.yaml            # ArgoCD Ingress, RBAC, & Root App
  ┃ ┣ 📂 argocd-apps        
  ┃ ┃ ┗ 📜 node-app-dev.yaml
  ┃ ┗ 📂 helm-chart
  ┃    ┣ 📂 templates        
  ┃    ┣ 📜 Chart.yaml
- ┃    ┣ 📜 values-dev.yaml   # Environment specific values
+ ┃    ┣ 📜 values-dev.yaml     # Environment specific values
  ┃    ┣ 📜 values-staging.yaml
  ┃    ┗ 📜 values-prod.yaml
  ┣ 📂 scripts              
  ┃ ┣ 📂 bash
- ┃ ┃ ┣ 📜 install.sh       # Automated K3s, Docker, & Vault setup script (Linux/Vagrant)
- ┃ ┃ ┣ 📜 teardown.sh      # Environment cleanup script
- ┃ ┃ ┗ 📜 Vagrantfile      # VM Configuration & Port Forwarding
+ ┃ ┃ ┣ 📜 install.sh           # Automated K3s, Docker, & Vault setup script (Linux/Vagrant)
+ ┃ ┃ ┣ 📜 teardown.sh          # Environment cleanup script
+ ┃ ┃ ┗ 📜 Vagrantfile          # VM Configuration & Port Forwarding
  ┃ ┗ 📂 powershell
- ┃   ┣ 📜 install.ps1      # Automated setup script (Windows Docker Desktop)
+ ┃   ┣ 📜 install.ps1          # Automated setup script (Windows Docker Desktop)
  ┃   ┗ 📜 uninstall.ps1        
  ┣ 📂 src                  
  ┃ ┣ 📜 index.js, package.json
- ┃ ┣ 📜 index.test.js      # Jest unit test
+ ┃ ┣ 📜 index.test.js          # Jest unit test
  ┃ ┗ 📜 Dockerfile         
  ┣ 📜 docker-compose.yml   
- ┣ 📜 .env                 # MUST be created before running installation scripts
- ┣ 📜 Dockerfile.win       # Jenkins Dockerfile for Windows Host workflow
- ┗ 📜 Dockerfile.linux     # Jenkins Dockerfile for Linux Host workflow
+ ┣ 📜 .env                     # MUST be created before running installation scripts
+ ┣ 📜 Dockerfile.win           # Jenkins Dockerfile for Windows Host workflow
+ ┗ 📜 Dockerfile.linux         # Jenkins Dockerfile for Linux Host workflow
 ```
 
 ---
@@ -198,15 +199,26 @@ Ensure **Kubernetes** is enabled in your Docker Desktop settings.
 
 ## 🌐 Accessing Services & Auto-Seeded Credentials
 
-Regardless of the installation method (Vagrant or Host Docker), services are mapped to your `localhost`. Upon successful execution, credentials are automatically injected into **HashiCorp Vault KV v2** (`secret/`):
+### 📝 Local Domain Mapping (Windows `hosts` file)
+To access services routed through the Nginx Ingress Controller (like Grafana and ArgoCD) using local domain names, you must map them in your Windows OS.
+1. Open **Notepad** as Administrator.
+2. Open the file `C:\Windows\System32\drivers\etc\hosts`.
+3. Add the following line at the bottom of the file (if using the Vagrant workflow, replace `127.0.0.1` with your specific VM IP):
+   ```text
+   127.0.0.1 argocd.local grafana.local
+   ```
+4. Save the file.
+
+### 🔗 Service Endpoints
+Regardless of the installation method (Vagrant or Host Docker), services are mapped to your `localhost` or local domains. Upon successful execution, credentials are automatically injected into **HashiCorp Vault KV v2** (`secret/`):
 
 - **Jenkins:** `http://localhost:8080` (User: `jenkins`, Pass: `jenkins`)
   - Configured Credentials Store: `dockerhub-creds`, `github-creds`, `argocd-creds`.
 - **Nexus 3:** `http://localhost:8082` (User: `admin`, Pass: `P4ssw0rdNexus`)
-- **ArgoCD Dashboard:** `https://localhost` (User: `admin`, Pass: `P4ssw0rdArgoCD`)
+- **ArgoCD Dashboard:** `http://argocd.local` (User: `admin`, Pass: `P4ssw0rdArgoCD`)
 - **HashiCorp Vault:** `http://localhost:8200` 
   - **Root Token:** Saved automatically in `vault-keys.json` in the root workspace and printed in terminal logs.
-- **Grafana:** `http://localhost:8083` (User: `admin`, Password extracted dynamically from K8s secret)
+- **Grafana:** `http://grafana.local` (User: `admin`, Password extracted dynamically from K8s secret)
 - **Prometheus:** `http://localhost:9090`
 - **ActiveMQ Artemis:** `http://localhost:8161` (User: `admin`, Pass: `artemisadmin`)
 - **pgAdmin:** `http://localhost:8081` (User: `dedimk.devops@gmail.com`, Pass: `pgadmin-local`)

@@ -140,17 +140,22 @@ helm upgrade --install pgadmin runix/pgadmin4 -n default `
 
 
 Write-Host "`n==========================================================" -ForegroundColor Cyan
-Write-Host "5. Setup Prometheus & Grafana on Kubernetes (K3s via Helm)" -ForegroundColor Yellow
+Write-Host "5. Setup Prometheus & Grafana on Kubernetes (K3s)" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
 kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
 helm repo update
 
-helm upgrade --install prometheus-stack prometheus-community/kube-prometheus-stack -n monitoring `
-    --set grafana.service.type=LoadBalancer `
-    --set grafana.service.port=8083 `
+helm upgrade --install prometheus-stack prometheus-community/kube-prometheus-stack -n monitoring --reuse-values `
+    --set grafana.ingress.enabled=true `
+    --set grafana.ingress.ingressClassName=nginx `
+    --set "grafana.ingress.hosts={grafana.local}"
     --set prometheus.service.type=LoadBalancer `
     --set prometheus.service.port=9090
+
+Write-Host "`nWaiting for the Grafana pod to reach a ready state." -ForegroundColor Magenta
+Start-Sleep -Seconds 15
+kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=grafana -n monitoring --timeout=300s
 
 
 Write-Host "`n==========================================================" -ForegroundColor Cyan
@@ -168,15 +173,23 @@ helm upgrade --install vault hashicorp/vault -n vault `
     --set "ui.externalPort=8200"
 
 Write-Host "`n==========================================================" -ForegroundColor Cyan
-Write-Host "7. Setup ActiveMQ Artemis on Kubernetes (K3s via Helm)" -ForegroundColor Yellow
+Write-Host "7. Setup ActiveMQ Artemis on Kubernetes (K3s via Manifest)" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
-helm repo add vromero https://vromero.github.io/activemq-artemis-helm/
-helm repo update
+Write-Host "Creating 'artemis' namespace..." -ForegroundColor Cyan
+kubectl create namespace artemis --dry-run=client -o yaml | kubectl apply -f -
 
-helm upgrade --install artemis vromero/activemq-artemis -n artemis `
-    --create-namespace `
-    --set adminUser="$env:ARTEMIS_USER" `
-    --set adminPassword="$env:ARTEMIS_PASSWORD"
+Write-Host "Injecting Artemis Credentials from .env to Kubernetes Secret..." -ForegroundColor Cyan
+kubectl create secret generic artemis-credentials -n artemis `
+    --from-literal=ARTEMIS_USER="$env:ARTEMIS_USER" `
+    --from-literal=ARTEMIS_PASSWORD="$env:ARTEMIS_PASSWORD" `
+    --dry-run=client -o yaml | kubectl apply -f -
+
+Write-Host "Applying Artemis StatefulSet Manifest." -ForegroundColor Cyan
+kubectl apply -f k8s/artemis.yaml
+
+Write-Host "`nWaiting for the Artemis Pod to reach ready status." -ForegroundColor Magenta
+Start-Sleep -Seconds 10
+kubectl wait --for=condition=ready pod -l app=artemis -n artemis --timeout=300s
 
 # --- Non Helm ---
 # Write-Host "`n==========================================================" -ForegroundColor Cyan
@@ -380,9 +393,9 @@ Write-Host "ACCESS YOUR SERVICES:"
 Write-Host " - Jenkins    : http://localhost:8080"
 Write-Host "   InitAdmin  : $jenkinsPass (Login: jenkins / jenkins)" -ForegroundColor Green
 Write-Host " - Nexus 3    : http://localhost:8082 (User: admin, Pass: $nexusPass)" -ForegroundColor Green
-Write-Host " - Argo CD    : https://localhost (User: admin, Pass: $argocdPass)" -ForegroundColor Green
+Write-Host " - Argo CD    : http://argocd.local (User: admin, Pass: $argocdPass)" -ForegroundColor Green
 Write-Host " - Artemis    : http://localhost:8161 (User: $($env:ARTEMIS_USER), Pass: $($env:ARTEMIS_PASSWORD))" -ForegroundColor Green
-Write-Host " - Grafana    : http://localhost:8083 (User: admin, Pass: $grafanaPass)" -ForegroundColor Green
+Write-Host " - Grafana    : http://grafana.local http://localhost:8083 (User: admin, Pass: $grafanaPass)" -ForegroundColor Green
 Write-Host " - Prometheus : http://localhost:9090" -ForegroundColor Green
 Write-Host " - PGAdmin    : http://localhost:8081 (User: $($env:PGADMIN_EMAIL), Pass: $($env:PGADMIN_PASSWORD))"
 Write-Host " - PostgreSQL : localhost:5432 (User: postgres, Pass: $($env:POSTGRES_PASSWORD))"
