@@ -356,16 +356,16 @@ pipeline {
     }    
     post {
         always {
-            script {
                 // 1. Cleaning the Workspace (State Clean)
-                try {
-                    echo "🧹 Cleaning up the workspace to prevent the server disk from becoming full."
-                    // cleanWs()
-                    // echo "✨ Workspace cleaned successfully."
-                } catch (Exception e) {
-                    echo "⚠️ Cleanup was skipped because the workspace was not ready."
-                }
-            }
+            // script {
+            //     try {
+            //         echo "🧹 Cleaning up the workspace to prevent the server disk from becoming full."
+            //         cleanWs()
+            //         echo "✨ Workspace cleaned successfully."
+            //     } catch (Exception e) {
+            //         echo "⚠️ Cleanup was skipped because the workspace was not ready."
+            //     }
+            // }
 
             // 2. Sending Telegram Notifications
             script {

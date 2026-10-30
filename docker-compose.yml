@@ -19,6 +19,7 @@ services:
       - LOCAL_SRC_PATH=${WORKSPACE_DIR}
     extra_hosts:
       - "host.docker.internal:host-gateway"
+      - "argocd.local:host-gateway"
     restart: unless-stopped
     networks:
       - devops-network
