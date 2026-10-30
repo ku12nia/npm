@@ -293,7 +293,8 @@ pipeline {
                     def appName = "node-app-${targetEnv}" 
                     def namespace = "${targetEnv}-apps" 
                     def targetValuesFile = "values-${targetEnv}.yaml"
-                    def argocdServer = "host.docker.internal:80"
+                    // def argocdServer = "host.docker.internal:80"
+                    def argocdServer = "argocd.local"
                     
                     // withCredentials([usernamePassword(credentialsId: 'argocd-creds', passwordVariable: 'ARGOCD_PASS', usernameVariable: 'ARGOCD_USER')]) {
                     //     sh """
