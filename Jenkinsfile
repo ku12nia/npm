@@ -167,36 +167,6 @@ pipeline {
                             echo "🔒 Docker logged out successfully. State cleaned."
                         }
                     } 
- 
-                    // echo "🔐 Performing automatic authentication to Docker Hub."
-                    // withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', passwordVariable: 'DOCKER_PASS', usernameVariable: 'DOCKER_USER')]) {
-                    //     def loginStatus = sh(
-                    //         script: """
-                    //             set +x
-                    //             echo "\$DOCKER_PASS" | docker login -u "\$DOCKER_USER" --password-stdin
-                    //         """, 
-                    //         returnStatus: true
-                    //     )
-                    //     if (loginStatus != 0) {
-                    //         error("❌ Failed to log in to Docker Hub! Check the 'dockerhub-creds' credentials.")
-                    //     }
-                    //     echo "🚀 Pushing image tag: ${newImageTag} ke Docker Hub..."
-                    //     def pushStatus = sh(script: "docker push ${imageRepo}:${newImageTag}", returnStatus: true)
-                        
-                    //     if (pushStatus != 0) {
-                    //         error("❌ Failed to push image tag ${newImageTag} to Docker Hub! Pipeline stopped.")
-                    //     }
-                    //     if (targetEnv == 'dev') {
-                    //         echo "🚀 Pushing image cache referensi (dev-cache)."
-                    //         sh "docker push ${imageRepo}:dev-cache"
-                    //     } else if (targetEnv == 'prod') {
-                    //         echo "🚀 Pushing image latest..."
-                    //         def pushLatest = sh(script: "docker push ${imageRepo}:latest", returnStatus: true)
-                    //         if (pushLatest != 0) {
-                    //             error("❌ Failed to push the 'latest' image. Pipeline stopped.")
-                    //         }
-                    //     }
-                    // }
 
                 }
             }
@@ -249,41 +219,6 @@ pipeline {
             }
         }
 
-        // stage('5. Update Manifest & Push ke Git') {
-        //     steps {
-        //         script {
-        //             def targetEnv = params.DEPLOY_ENV
-        //             def targetBranch = (targetEnv == 'prod') ? 'main' : targetEnv
-        //             def newImageTag = "${env.PADDED_BUILD_NUMBER}-${targetEnv}"
-        //             def targetValuesFile = "k8s/helm-chart/values-${targetEnv}.yaml"
-                    
-        //             echo "✨ Updating ${targetValuesFile} on branch: ${targetBranch}"
-        //             sh "sed -i 's/tag: .*/tag: \"${newImageTag}\"/g' ${targetValuesFile}"
-
-        //             echo "✨ Updating ${targetValuesFile} on branch: ${targetBranch}"
-        //             sh 'git config --global user.email "dedimk.devops@gmail.com"'
-        //             sh 'git config --global user.name "Dedi Mohammad Kurnia"'
-        //             def changes = sh(script: 'git status --porcelain', returnStdout: true).trim()
-                    
-        //             if (changes != "") {
-        //                 sh "git add ${targetValuesFile}" // <-- Dynamic git add
-        //                 sh "git commit -m 'ci(argocd): update helm image tag for ${targetEnv} to ${newImageTag} [skip ci]'"
-                        
-        //                 withCredentials([gitUsernamePassword(credentialsId: 'github-creds')]) {
-        //                     def gitPushStatus = sh(script: "git push origin HEAD:${targetBranch}", returnStatus: true)
-        //                     if (gitPushStatus == 0) {
-        //                         echo "🚀 Berhasil push update manifest Helm ke branch GitHub ${targetBranch}!"
-        //                     } else {
-        //                         unstable("⚠️ WARNING: Gagal push ke GitHub.")
-        //                     }
-        //                 }
-        //             } else {
-        //                 echo "⚠️ Tidak ada perubahan pada manifest, melewatkan proses git commit."
-        //             }
-        //         }
-        //     }
-        // }
-
         // Stage 6: Trigger ArgoCD Sync CLI. Setup: Securely logs into ArgoCD and ensures the application is registered to the correct GitHub repo and Kubernetes namespace, Sync: Forces an immediate deployment, bypassing ArgoCD's default 3-minute polling delay, Cleanup: Securely logs out of ArgoCD to destroy the active session token.
         stage('6. Trigger ArgoCD Sync CLI') {
             steps {
@@ -295,37 +230,13 @@ pipeline {
                     def targetValuesFile = "values-${targetEnv}.yaml"
                     // def argocdServer = "host.docker.internal:80"
                     def argocdServer = "argocd.local"
-                    
-                    // withCredentials([usernamePassword(credentialsId: 'argocd-creds', passwordVariable: 'ARGOCD_PASS', usernameVariable: 'ARGOCD_USER')]) {
-                    //     sh """
-                    //         set +x
-                    //         echo "🔐 Logging in to ArgoCD via CLI..."
-                    //         argocd login ${argocdServer} --username \$ARGOCD_USER --password \$ARGOCD_PASS --plaintext --grpc-web
-                            
-                    //         echo "📝 Ensuring application ${appName} is registered..."
-                    //         argocd app create ${appName} \
-                    //           --repo https://github.com/ku12nia/npm.git \
-                    //           --path k8s/helm-chart \
-                    //           --revision ${targetBranch} \
-                    //           --values ${targetValuesFile} \
-                    //           --dest-server https://kubernetes.default.svc \
-                    //           --dest-namespace ${namespace} \
-                    //           --sync-option CreateNamespace=true \
-                    //           --sync-option Replace=true \
-                    //           --upsert
-                            
-                    //         echo "🚀 Syncing application: ${appName}..."
-                    //         argocd app sync ${appName} --replace
-                    //     """
-                    // }
-                    // echo "🔄 ArgoCD synchronization was successful for ${appName}!"
 
                     withCredentials([usernamePassword(credentialsId: 'argocd-creds', passwordVariable: 'ARGOCD_PASS', usernameVariable: 'ARGOCD_USER')]) {
                         try {
                             sh """
                                 set +x
                                 echo "🔐 Logging in to ArgoCD via CLI..."
-                                argocd login ${argocdServer} --username \$ARGOCD_USER --password \$ARGOCD_PASS --plaintext --grpc-web
+                                argocd login ${argocdServer} --username \$ARGOCD_USER --password \$ARGOCD_PASS --plaintext --insecure --grpc-web
                                 
                                 echo "📝 Ensuring application ${appName} is registered..."
                                 argocd app create ${appName} \
@@ -356,16 +267,16 @@ pipeline {
     }    
     post {
         always {
-                // 1. Cleaning the Workspace (State Clean)
-            // script {
-            //     try {
-            //         echo "🧹 Cleaning up the workspace to prevent the server disk from becoming full."
-            //         cleanWs()
-            //         echo "✨ Workspace cleaned successfully."
-            //     } catch (Exception e) {
-            //         echo "⚠️ Cleanup was skipped because the workspace was not ready."
-            //     }
-            // }
+            // 1. Cleaning the Workspace (State Clean) - Be careful—your local workspace will be deleted.
+            script {
+                try {
+                    echo "🧹 Cleaning up the workspace to prevent the server disk from becoming full."
+                    cleanWs()
+                    echo "✨ Workspace cleaned successfully."
+                } catch (Exception e) {
+                    echo "⚠️ Cleanup was skipped because the workspace was not ready."
+                }
+            }
 
             // 2. Sending Telegram Notifications
             script {

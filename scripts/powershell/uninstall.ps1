@@ -96,7 +96,8 @@ if (Get-Command helm -ErrorAction SilentlyContinue) {
     kubectl get pvc -n artemis -o jsonpath='{.items[*].metadata.name}' 2>$null | ForEach-Object {
         if ($_ -ne "") {
             Write-Log "Force deleting PVC: $_" -ForegroundColor Yellow
-            kubectl delete pvc $_ -n artemis --force --grace-period=0 --ignore-not-found=true
+            # kubectl delete pvc $_ -n artemis --force --grace-period=0 --ignore-not-found=true
+            kubectl delete namespace artemis --ignore-not-found=true --force --grace-period=0
         }
     }
     
