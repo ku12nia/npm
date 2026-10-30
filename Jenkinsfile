@@ -350,6 +350,7 @@ pipeline {
                     }
                 }
             }
+        }
         // NEXT STAGE
     }    
     post {
@@ -358,24 +359,22 @@ pipeline {
                 // 1. Cleaning the Workspace (State Clean)
                 try {
                     echo "🧹 Cleaning up the workspace to prevent the server disk from becoming full."
-                    // sh 'rm -rf node_modules coverage junit.xml docker.tgz docker'
-                    cleanWs()
-                    echo "✨ Workspace cleaned successfully."
+                    // cleanWs()
+                    // echo "✨ Workspace cleaned successfully."
                 } catch (Exception e) {
                     echo "⚠️ Cleanup was skipped because the workspace was not ready."
                 }
             }
 
-                // 2. Sending Telegram Notifications
+            // 2. Sending Telegram Notifications
+            script {
                 try {
                     echo "📱 Sending notification to Telegram..."
 
-                    // Get final build status
                     def buildStatus = currentBuild.currentResult ?: 'SUCCESS'
                     def statusEmoji = (buildStatus == 'SUCCESS') ? '✅' : '❌'
                     def targetEnv = params.DEPLOY_ENV ?: 'N/A'
                     
-                    // The message is formatted using Markdown
                     def tgMessage = """
 ${statusEmoji} *Jenkins Pipeline Update* ${statusEmoji}
 
@@ -386,11 +385,10 @@ ${statusEmoji} *Jenkins Pipeline Update* ${statusEmoji}
 
 [📝 Klik untuk melihat log build](${env.BUILD_URL})
                     """
-                    // Retrieving a token from credentials
+
                     withCredentials([string(credentialsId: 'telegram-bot-token', variable: 'TELEGRAM_TOKEN')]) {
-                        def chatId = "-1001234567890" // GANTI DENGAN CHAT ID GRUP/CHANNEL ANDA
+                        def chatId = "-1003786747095"
                         
-                        // Executing an API using curl
                         sh """
                             curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage" \
                             -d chat_id="${chatId}" \
@@ -402,7 +400,7 @@ ${statusEmoji} *Jenkins Pipeline Update* ${statusEmoji}
                 } catch (Exception e) {
                     echo "⚠️ Failed to send Telegram notification: ${e.getMessage()}"
                 }
-
+            }
         }
     }
 }
