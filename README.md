@@ -190,9 +190,8 @@ Ensure **Kubernetes** is enabled in your Docker Desktop settings.
 1. Open PowerShell as Administrator.
 2. Navigate to the PowerShell scripts folder:
    ```powershell
-   cd scripts\powershell
    Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-   .\install.ps1
+   .\scripts\powershell\install.ps1
    ```
 
 ---
