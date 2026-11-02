@@ -1,9 +1,10 @@
 services:
 # --- JENKINS ---
   jenkins:
+    image: npm-jenkins
     build: 
       context: .
-      dockerfile: Dockerfile.jenkins
+      dockerfile: Dockerfile.win
     container_name: jenkins-local
     ports:
       - "8080:8080"
@@ -18,6 +19,8 @@ services:
       - LOCAL_SRC_PATH=${WORKSPACE_DIR}
     extra_hosts:
       - "host.docker.internal:host-gateway"
+      - "argocd.local:host-gateway"
+      - "grafana.local:host-gateway"
     restart: unless-stopped
     networks:
       - devops-network
@@ -53,6 +56,20 @@ services:
     networks:
       - devops-network
 
+  # --- NEXUS ---
+  nexus:
+    image: sonatype/nexus3:latest
+    container_name: nexus
+    restart: unless-stopped
+    ports:
+      - "8081:8081" # Port UI default Nexus dipindah ke 8081
+      - "8082:8083" # NPM Proxy Access
+      - "8084:8084" # Akses Docker Hosted
+    volumes:
+      - nexus_data:/nexus-data
+    networks:
+      - devops-network
+
 volumes:
   jenkins_home:
     name: npm_jenkins_home
@@ -60,6 +77,8 @@ volumes:
     name: npm_pgdata
   minio_data:
     name: npm_minio_data
+  nexus_data:
+    name: nexus_data
 
 networks:
   devops-network:

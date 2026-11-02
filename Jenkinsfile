@@ -1,41 +1,40 @@
 pipeline {
     agent any
-    
+    // Parameters: Prompts the user to select the target environment (dev, staging, or prod), specify an IMAGE_TAG_TO_PROMOTE when deploying to upper environments, and indicate if the Docker Hub repository is private
     parameters {
         choice(name: 'DEPLOY_ENV', choices: ['dev', 'staging', 'prod'], description: 'Select the target environment for deployment.')
+        string(name: 'IMAGE_TAG_TO_PROMOTE', defaultValue: '', description: 'Enter the Image Tag from the stable Dev/Staging environment. Leave blank if env = dev.')
         booleanParam(name: 'IS_PRIVATE_REPO', defaultValue: false, description: 'Check this box if the Docker Hub repository is private.')
     }
-    
+    // Options: Uses buildDiscarder with logRotator to keep only the last 10 build logs, preventing the Jenkins server disk from filling up.
     options {
         buildDiscarder(logRotator(numToKeepStr: '10'))
     }
-    
     stages {
+        // Stage 0. Setup Build Name: Formats the build number (padding it to two digits) and customizes the build display name in the Jenkins dashboard (e.g., #01 - dev).
         stage('0. Setup Build Name') {
             steps {
                 script {
-                    currentBuild.displayName = "#${env.BUILD_NUMBER} - ${params.DEPLOY_ENV}"
+                    env.PADDED_BUILD_NUMBER = String.format("%02d", env.BUILD_NUMBER.toInteger())
+                    currentBuild.displayName = "#${env.PADDED_BUILD_NUMBER} - ${params.DEPLOY_ENV}"
                 }
             }
         }
-        
-        stage('1. Checkout code or Directly mounted to workspace') {
+        // Stage 1. Checkout Code: Determines the target GitHub branch based on the deployment environment (main for production, or the respective environment name for dev/staging). It also supports a local directory mode if LOCAL_SRC_PATH is configured.
+        stage('1. Checkout Code') {
             steps {
                 script {
                     def targetBranch = (params.DEPLOY_ENV == 'prod') ? 'main' : params.DEPLOY_ENV
-                    
                     if (env.LOCAL_SRC_PATH) {
                         echo "💻 Local Directory Mode Active!"
                         if (!fileExists('Jenkinsfile')) {
-                            error("❌ The workspace is empty! Make sure you have cloned the repo into the Windows host folder.")
+                            error("❌ Workspace is empty! Ensure the repo has been cloned into the Windows host folder.")
                         } else {
                             echo "✅ Local source code is ready to build."
                         }
-                        
                     } else {
                         echo "🌐 Server Mode Active. Fetching from GitHub repository..."
                         cleanWs()
-                        
                         try {
                             checkout([
                                 $class: 'GitSCM',
@@ -49,78 +48,20 @@ pipeline {
                                     credentialsId: 'github-creds'
                                 ]]
                             ])
-                            echo "✅ Successfully checked out from the branch: ${targetBranch}."
+                            echo "✅ Successfully checked out from branch: ${targetBranch}."
                         } catch (Exception e) {
-                            echo "❌ Failed to check out code from the branch: ${targetBranch}."
-                            echo "Reason: ${e.getMessage()}"
-                            error("The pipeline was stopped because the repository checkout failed.")
+                            echo "❌ Failed to check out code from branch: ${targetBranch}."
+                            error("Pipeline stopped because the repository checkout failed: ${e.getMessage()}")
                         }
                     }
                 }
             }
         }
-        
-        // stage('2. Docker Preparation & Test App') {
-        //     steps {
-        //         script {
-        //             def hasDocker = sh(script: 'command -v docker', returnStatus: true) == 0
-        //             if (!hasDocker) {
-        //                 echo "⚙️ Docker is not present. Downloading Docker CLI."
-        //                 sh 'curl -sSL -o docker.tgz https://download.docker.com/linux/static/stable/x86_64/docker-24.0.9.tgz'
-        //                 sh 'tar -xzf docker.tgz'
-        //                 sh 'mv docker/docker /usr/bin/docker'
-        //                 sh 'chmod +x /usr/bin/docker'
-        //                 sh 'rm -rf docker docker.tgz'
-        //                 echo "✅ Docker CLI successfully installed!"
-        //             }
-
-        //             def hasBuildx = sh(script: 'docker buildx version', returnStatus: true) == 0
-        //             if (!hasBuildx) {
-        //                 echo "⚙️ The Buildx plugin is not yet installed. Downloading Buildx."
-        //                 sh 'mkdir -p ~/.docker/cli-plugins'
-        //                 sh 'curl -sSL -o ~/.docker/cli-plugins/docker-buildx https://github.com/docker/buildx/releases/download/v0.14.0/buildx-v0.14.0.linux-amd64'
-        //                 sh 'chmod +x ~/.docker/cli-plugins/docker-buildx'
-        //                 echo "✅ Docker Buildx has been successfully installed!"
-        //             }
-
-        //             def containerId = sh(script: 'hostname', returnStdout: true).trim()
-        //             echo "ℹ️ Jenkins is running in container ID: ${containerId}"
-
-        //             echo "🛠️ Running Unit Tests via Docker."
-                    
-        //             dir('src') {
-        //                 sh """
-        //                 docker run --rm --volumes-from ${containerId} -w \${WORKSPACE}/src node:22-alpine sh -c "\
-        //                     sed -i '1s/^\\\\xEF\\\\xBB\\\\xBF//' package.json && \
-        //                     npm install && \
-        //                     npm install --save-dev jest jest-junit && \
-        //                     npx jest --ci --coverage --reporters=default --reporters=jest-junit --passWithNoTests \
-        //                 "
-        //                 """
-        //             }
-        //             echo "✅ Unit Test Passed."
-        //         }
-        //     }
-        //     post {
-        //         success {
-        //             script {
-        //                 def junitFile = 'src/junit.xml'
-        //                 if (fileExists(junitFile)) {
-        //                     try {
-        //                         junit junitFile
-        //                         echo "✅ JUnit test report recorded successfully."
-        //                     } catch (Exception e) {
-        //                         echo "⚠️ JUnit report found but empty or invalid, skipping..."
-        //                     }
-        //                 } else {
-        //                     echo "⚠️ No JUnit report found, skipping..."
-        //                 }
-        //             }
-        //         }
-        //     }
-        // }
-
+        // Stage 2. Test App via Docker: Runs exclusively in the dev environment. It spins up a temporary node:22-alpine container to install dependencies and execute unit tests via Jest, publishing the JUnit XML test results.
         stage('2. Test App via Docker') {
+            when {
+                environment name: 'DEPLOY_ENV', value: 'dev'
+            }
             steps {
                 script {
                     def containerId = sh(script: 'hostname', returnStdout: true).trim()
@@ -142,246 +83,234 @@ pipeline {
                 success {
                     script {
                         if (fileExists('src/junit.xml')) {
-                            try { junit 'src/junit.xml' } catch (e) { echo "⚠️ Invalid JUnit report, skipping..." }
+                            try { junit 'src/junit.xml' } catch (e) { echo "⚠️ Unit report is invalid, skipping." }
                         }
                     }
                 }
             }
         }
-
-        stage('3. Build & Push Docker Image') {
+        // Stage 3. Approval Gate (Production): Pauses the pipeline for up to 1 hour, requiring manual approval from an administrator before allowing any deployment to proceed to production.
+        stage('3. Approval Gate (Production)') {
+            when {
+                environment name: 'DEPLOY_ENV', value: 'prod'
+            }
+            steps {
+                script {
+                    echo "Waiting approval to deploy to Production."
+                    timeout(time: 1, unit: 'HOURS') {
+                        input(
+                            id: 'DeployToProd',
+                            message: "⚠️ Proceed with deployment to PRODUCTION using the image tag: ${params.IMAGE_TAG_TO_PROMOTE}?",
+                            ok: 'Approve & Deploy'
+                        )
+                    }
+                    echo "✅ Deployment to production approved!"
+                }
+            }
+        }
+        // Stage 4. Build / Promote & Push Docker Image: For Dev: Pulls the previous dev image for cache reference and For Staging/Prod: Skips building entirely. Instead, it pulls the stable image specified by IMAGE_TAG_TO_PROMOTE
+        stage('4. Build / Promote & Push Docker Image') {
             steps {
                 script {
                     def targetEnv = params.DEPLOY_ENV
                     def imageRepo = "ku12nia/nodejs" 
-                    def imageTag = "${env.BUILD_NUMBER}-${targetEnv}"
-                    
-                    echo "🏗️ Building Docker image for: ${targetEnv}"
+                    def newImageTag = "${env.PADDED_BUILD_NUMBER}-${targetEnv}"
                     dir('src') {
-                        sh "DOCKER_BUILDKIT=1 docker build -t ${imageRepo}:${imageTag} ."            
-                        if (targetEnv == 'prod') {
-                            sh "docker tag ${imageRepo}:${imageTag} ${imageRepo}:latest"
+                        // For Dev: Pulls the previous dev image for cache reference, builds a new Docker image using BuildKit caching (--cache-from), and pushes it to Docker Hub.
+                        if (targetEnv == 'dev') {
+                            echo "🔍 Pulling the previous dev image for cache reference."
+                            sh "docker pull ${imageRepo}:dev-cache || true"
+                            echo "🏗️ Building a new Docker image (using BuildKit cache)."
+                            sh "DOCKER_BUILDKIT=1 docker build --cache-from ${imageRepo}:dev-cache --build-arg BUILDKIT_INLINE_CACHE=1 -t ${imageRepo}:${newImageTag} -t ${imageRepo}:dev-cache ."
+                        //  For Staging/Prod: Skips building entirely. Instead, it pulls the stable image specified by IMAGE_TAG_TO_PROMOTE, re-tags it for the target environment, and pushes it.             
+                        } else {
+                            if (!params.IMAGE_TAG_TO_PROMOTE?.trim()) {
+                                error("❌ Deployment to ${targetEnv} has been cancelled! The 'IMAGE_TAG_TO_PROMOTE' parameter must be provided with a stable image tag (e.g., 01-dev).")
+                            }
+                            echo "🔄 Promote stable image (Tag: ${params.IMAGE_TAG_TO_PROMOTE}) to env ${targetEnv}."
+                            
+                            sh "docker pull ${imageRepo}:${params.IMAGE_TAG_TO_PROMOTE}"
+                            sh "docker tag ${imageRepo}:${params.IMAGE_TAG_TO_PROMOTE} ${imageRepo}:${newImageTag}"
+                            
+                            if (targetEnv == 'prod') {
+                                sh "docker tag ${imageRepo}:${newImageTag} ${imageRepo}:latest"
+                            }
                         }
                     }
-                    echo "🔐 Perform automatic authentication to Docker Hub."
+                    //  Environment-Specific Routing:
+                    //  If dev: The pipeline pushes an additional dev-cache tag. This acts as a caching reference for Docker BuildKit, which significantly speeds up subsequent image builds in the development environment.
+                    //  If prod: The pipeline pushes an additional latest tag. This guarantees that the production repository always has a definitive pointer to the most recent stable release. It also includes error handling to abort if the latest push fails.
+
+                    echo "🔐 Performing automatic authentication to Docker Hub."
                     withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', passwordVariable: 'DOCKER_PASS', usernameVariable: 'DOCKER_USER')]) {
-                        def loginStatus = sh(
-                            script: """
+                        try {
+                            // Docker Login.
+                            sh '''
                                 set +x
-                                echo "\$DOCKER_PASS" | docker login -u "\$DOCKER_USER" --password-stdin
-                            """, 
-                            returnStatus: true
-                        )
-                        
-                        // Guard Clause
-                        if (loginStatus != 0) {
-                            error("❌ Failed to log in to Docker Hub! Check the 'dockerhub-creds' credentials in the Jenkins settings.")
-                        }
-                        echo "✅ Automatic login successful!"
-                        
-                        // Push Image
-                        echo "🚀 Pushing the image to Docker Hub."
-                        def pushStatus = sh(script: "docker push ${imageRepo}:${imageTag}", returnStatus: true)
-                        
-                        if (pushStatus != 0) {
-                            error("❌ Failed to push image tag ${imageTag} ke Docker Hub! Pipeline dihentikan.")
-                        }
-                        echo "✅ Push successfull ${imageRepo}:${imageTag}"
-                        
-                        // Push Image Latest (Khusus Prod)
-                        if (targetEnv == 'prod') {
-                            def pushLatest = sh(script: "docker push ${imageRepo}:latest", returnStatus: true)
-                            if (pushLatest != 0) {
-                                error("❌ Failed to push image with 'latest' tag. Pipeline stopped.")
+                                echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+                            '''
+                            echo "🚀 Pushing image tag: ${newImageTag} ke Docker Hub..."
+                            sh "docker push ${imageRepo}:${newImageTag}"
+                            
+                            if (targetEnv == 'dev') {
+                                echo "🚀 Pushing image cache referensi (dev-cache)."
+                                sh "docker push ${imageRepo}:dev-cache"
+                            } else if (targetEnv == 'prod') {
+                                echo "🚀 Pushing image latest..."
+                                sh "docker push ${imageRepo}:latest"
                             }
-                            echo "✅ Push successfull ${imageRepo}:latest"
+                        } catch (Exception e) {
+                            error("❌ Process Docker push failed: ${e.getMessage()}")
+                        } finally {
+                            // Always execute Logout, even if the push fails.
+                            sh "docker logout"
+                            echo "🔒 Docker logged out successfully. State cleaned."
                         }
-                    } // End withCredentials
+                    } 
+
                 }
             }
         }
-        
-        stage('4. Update Manifest & Push ke Git') {
+        // Stage 5: Update Manifest & Push to Gi. This stage automates the GitOps workflow by updating your infrastructure repository to point to the newly built Docker image. Update: Replaces the old image tag in the Helm values.yaml file with the new one, Commit & Push: Pushes the updated file to GitHub. It uses [skip ci] in the commit message to prevent Jenkins from triggering another build in an infinite loop, and Cleanup: Removes the Git credentials from the Jenkins server to keep the environment clean (stateless)
+        stage('5. Update Manifest & Push ke Git') {
             steps {
                 script {
-                    def imageTag = "${env.BUILD_NUMBER}-${params.DEPLOY_ENV}"
-                    def targetBranch = (params.DEPLOY_ENV == 'prod') ? 'main' : params.DEPLOY_ENV
+                    def targetEnv = params.DEPLOY_ENV
+                    def targetBranch = (targetEnv == 'prod') ? 'main' : targetEnv
+                    def newImageTag = "${env.PADDED_BUILD_NUMBER}-${targetEnv}"
+                    def targetValuesFile = "k8s/helm-chart/values-${targetEnv}.yaml"
                     
-                    echo "✨ Updating the Helm values.yaml in the branch: ${targetBranch}"
-                    
-                    sh "sed -i 's/tag: .*/tag: \"${imageTag}\"/g' k8s/helm-chart/values.yaml"
-                    
+                    echo """
+                    ==========================================================
+                    🚀 [GIT OPS] UPDATING HELM MANIFEST
+                    ==========================================================
+                    📌 Target Env   : ${targetEnv}
+                    📌 Target File  : ${targetValuesFile}
+                    🌿 Target Branch: ${targetBranch}
+                    🏷️  New Image Tag: ${newImageTag}
+                    ==========================================================
+                    """
+                    // 1. Modify values ​​files using sed
+                    sh "sed -i 's/tag: .*/tag: \"${newImageTag}\"/g' ${targetValuesFile}"
+                    echo "✅ File ${targetValuesFile} has been successfully updated with tag: ${newImageTag}"
+                    // 2. Set up local Git configuration in the Jenkins workspace
                     sh 'git config --global user.email "dedimk.devops@gmail.com"'
                     sh 'git config --global user.name "Dedi Mohammad Kurnia"'
-                    
+                    // 3. Checking Git status (porcelain returns an empty string if clean)
                     def changes = sh(script: 'git status --porcelain', returnStdout: true).trim()
-                    
-                    if (changes != "") {
-                        // sh "git add k8s/app-deployment.yaml"
-                        sh "git add k8s/helm-chart/values.yaml"
-                        sh "git commit -m 'ci(argocd): update helm image tag to ${imageTag} [skip ci]'"
-                        
+                    if (changes) {
+                        echo "🔍 File changes detected:\n${changes}"
+                        echo "⚙️ Performing commit & push process."
+                        sh "git add ${targetValuesFile}" 
+                        sh "git commit -m 'ci(argocd): update helm image tag for ${targetEnv} to ${newImageTag} [skip ci]'"
+                        // 4. Push to GitHub with credentials
                         withCredentials([gitUsernamePassword(credentialsId: 'github-creds')]) {
                             def gitPushStatus = sh(script: "git push origin HEAD:${targetBranch}", returnStatus: true)
                             if (gitPushStatus == 0) {
-                                echo "🚀 Successfully pushed the Helm manifest update to the GitHub branch. ${targetBranch}!"
+                                echo "🎉 [SUCCESS] Successfully pushed Helm manifest update to the branch: ${targetBranch}!"
                             } else {
-                                echo "⚠️ WARNING: Failed to push to GitHub."
-                                unstable("GitHub Push Failed")
+                                unstable("⚠️ [WARNING] Failed to push to GitHub. Check the logs or the 'github-creds' credentials.")
                             }
                         }
                     } else {
-                        echo "⚠️ No changes to the manifest; skip git commit."
+                        echo "⚠️ [SKIPPED] No changes to the manifest; skipping the git commit & push process."
                     }
                 }
             }
         }
 
-        stage('5. Trigger ArgoCD Sync CLI from Docker') {
+        // Stage 6: Trigger ArgoCD Sync CLI. Setup: Securely logs into ArgoCD and ensures the application is registered to the correct GitHub repo and Kubernetes namespace, Sync: Forces an immediate deployment, bypassing ArgoCD's default 3-minute polling delay, Cleanup: Securely logs out of ArgoCD to destroy the active session token.
+        stage('6. Trigger ArgoCD Sync CLI') {
             steps {
                 script {
-                    def targetBranch = (params.DEPLOY_ENV == 'prod') ? 'main' : params.DEPLOY_ENV
-                    def appName = "node-app-${params.DEPLOY_ENV}" 
-                    def namespace = "${params.DEPLOY_ENV}-apps" 
-                    def argocdServer = "host.docker.internal:80"
-                    // def argocdServer = "192.168.65.3:80"
+                    def targetEnv = params.DEPLOY_ENV
+                    def targetBranch = (targetEnv == 'prod') ? 'main' : targetEnv
+                    def appName = "node-app-${targetEnv}" 
+                    def namespace = "${targetEnv}-apps" 
+                    def targetValuesFile = "values-${targetEnv}.yaml"
+                    // def argocdServer = "host.docker.internal:80"
+                    def argocdServer = "argocd.local"
+
                     withCredentials([usernamePassword(credentialsId: 'argocd-creds', passwordVariable: 'ARGOCD_PASS', usernameVariable: 'ARGOCD_USER')]) {
-                        sh """
-                            set +x
-                            echo "🔐 Logging in to ArgoCD via CLI..."
-                            argocd login ${argocdServer} --username \$ARGOCD_USER --password \$ARGOCD_PASS --plaintext --grpc-web
-                            
-                            echo "🚀 Syncing application: ${appName}..."
-                            argocd app sync ${appName}
-                        """
+                        try {
+                            sh """
+                                set +x
+                                echo "🔐 Logging in to ArgoCD via CLI..."
+                                argocd login ${argocdServer} --username \$ARGOCD_USER --password \$ARGOCD_PASS --plaintext --insecure --grpc-web
+                                
+                                echo "📝 Ensuring application ${appName} is registered..."
+                                argocd app create ${appName} \
+                                  --repo https://github.com/ku12nia/npm.git \
+                                  --path k8s/helm-chart \
+                                  --revision ${targetBranch} \
+                                  --values ${targetValuesFile} \
+                                  --dest-server https://kubernetes.default.svc \
+                                  --dest-namespace ${namespace} \
+                                  --sync-option CreateNamespace=true \
+                                  --sync-option Replace=true \
+                                  --upsert
+                                
+                                echo "🚀 Syncing application: ${appName}..."
+                                argocd app sync ${appName} --replace
+                            """
+                            echo "🔄 ArgoCD synchronization was successful for ${appName}!"
+                        } finally {
+                            // Pastikan Logout setelah sync atau jika terjadi error
+                            sh "argocd logout ${argocdServer} || true"
+                            echo "🔒 ArgoCD logged out successfully. State cleaned."
+                        }
                     }
-                    echo "🔄 App synchronization successful for ${appName}!"
                 }
             }
         }
-
-//         stage('5. Trigger ArgoCD Sync (REST API)') {
-//             steps {
-//                 script {
-//                     def targetBranch = (params.DEPLOY_ENV == 'prod') ? 'main' : params.DEPLOY_ENV
-//                     def appName = "node-app-${params.DEPLOY_ENV}" 
-//                     def namespace = "${params.DEPLOY_ENV}-apps" 
-//                     def argocdServer = "host.docker.internal"
-                    
-//                     withCredentials([usernamePassword(credentialsId: 'argocd-creds', passwordVariable: 'ARGOCD_PASS', usernameVariable: 'ARGOCD_USER')]) {
-//                         sh """
-//                             set +x
-//                             echo "🔐 Authenticating to ArgoCD via REST API..."
-                            
-//                             # 1. Get JWT Token from ArgoCD
-//                             LOGIN_RES=\$(curl -s -k -X POST "http://${argocdServer}/api/v1/session" \
-//                                 -H "Content-Type: application/json" \
-//                                 -d "{\\\"username\\\": \\"\$ARGOCD_USER\\\", \\"password\\\": \\"\$ARGOCD_PASS\\\"}")
-                            
-//                             # Extract token using simple grep/sed or python if available, but jq/grep works. Let's extract token value:
-//                             TOKEN=\$(echo \$LOGIN_RES | grep -o '"token":"[^"]*"' | cut -d'"' -f4)
-                            
-//                             if [ -z "\$TOKEN" ]; then
-//                                 echo "❌ Failed to obtain ArgoCD JWT token. Response: \$LOGIN_RES"
-//                                 exit 1
-//                             fi
-//                             echo "✅ Successfully authenticated!"
-
-//                             # 2. Define Application JSON Payload for Upsert (Create/Update)
-//                             read -r -d '' APP_PAYLOAD << EOM || true
-//                             {
-//                               "spec": {
-//                                 "source": {
-//                                   "repoURL": "https://github.com/ku12nia/npm.git",
-//                                   "path": "k8s/helm-chart",
-//                                   "targetRevision": "${targetBranch}",
-//                                   "helm": {
-//                                     "valueFiles": ["values.yaml"]
-//                                   }
-//                                 },
-//                                 "destination": {
-//                                   "server": "https://kubernetes.default.svc",
-//                                   "namespace": "${namespace}"
-//                                 },
-//                                 "project": "default",
-//                                 "syncPolicy": {
-//                                   "automated": {
-//                                     "prune": true,
-//                                     "selfHeal": true
-//                                   }
-//                                 }
-//                               }
-//                             }
-// EOM
-
-//                             echo "🚀 Upserting ArgoCD application: ${appName}..."
-//                             # Upsert application (PUT /api/v1/applications/{name}?upsert=true)
-//                             curl -s -k -X PUT "http://${argocdServer}/api/v1/applications/${appName}?upsert=true" \
-//                                 -H "Authorization: Bearer \$TOKEN" \
-//                                 -H "Content-Type: application/json" \
-//                                 -d "\$APP_PAYLOAD"
-
-//                             echo "🔄 Triggering sync for application: ${appName}..."
-//                             # Trigger manual sync (POST /api/v1/applications/{name}/sync)
-//                             curl -s -k -X POST "http://${argocdServer}/api/v1/applications/${appName}/sync" \
-//                                 -H "Authorization: Bearer \$TOKEN" \
-//                                 -H "Content-Type: application/json"
-
-//                             echo "✨ ArgoCD synchronization successfully triggered via REST API for ${appName}!"
-//                         """
-//                     }
-//                 }
-//             }
-//         }
-
-        // stage('5. Trigger Sync ArgoCD CLI') {
-        //     steps {
-        //         script {
-        //             sh 'curl -sSL -o argocd https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64 && chmod +x argocd'
-                    
-        //             def hasArgocd = sh(script: 'test -x ./argocd', returnStatus: true) == 0
-        //             if (hasArgocd) {
-        //                 def argocdServer = "host.docker.internal:8081"
-        //                 def targetBranch = (params.DEPLOY_ENV == 'prod') ? 'main' : params.DEPLOY_ENV
-        //                 def appName = "node-app-${params.DEPLOY_ENV}" 
-        //                 def namespace = "${params.DEPLOY_ENV}-apps" 
-                        
-        //                 withCredentials([usernamePassword(credentialsId: 'argocd-creds', passwordVariable: 'ARGOCD_PASS', usernameVariable: 'ARGOCD_USER')]) {
-        //                     def argoLoginStatus = sh(
-        //                         script: """
-        //                             set +x
-        //                             ./argocd login ${argocdServer} --username \$ARGOCD_USER --password \$ARGOCD_PASS --insecure
-        //                         """, 
-        //                         returnStatus: true
-        //                     )
-                            
-        //                     if (argoLoginStatus == 0) {
-        //                         sh "./argocd app create ${appName} --repo https://github.com/ku12nia/npm.git --path k8s/helm-chart --revision ${targetBranch} --dest-server https://kubernetes.default.svc --dest-namespace ${namespace} --sync-policy automated --upsert"
-        //                         sh "./argocd app sync ${appName}"
-                                
-        //                         echo "🔄 App synchronization successful ${appName} to ArgoCD monitoring the branch ${targetBranch}."
-        //                     } else {
-        //                         echo "⚠️ WARNING: Failed to connect to the ArgoCD server. CLI synchronization skipped."
-        //                         unstable("ArgoCD Login Failed")
-        //                     }
-        //                 }
-        //             } else {
-        //                 echo "⚠️ The 'argocd' command was not found. Stage skipped."
-        //             }
-        //         }
-        //     }
-        // }
-// Next Stage
+        // NEXT STAGE
     }    
     post {
         always {
+            // 1. Cleaning the Workspace (State Clean) - Be careful—your local workspace will be deleted.
             script {
                 try {
-                    echo "🧹 Cleaning up the workspace to fix the full disk on the server."
-                    sh 'rm -rf node_modules coverage junit.xml docker.tgz docker'
-                    echo "✨ The workspace is sparkling clean again!"
+                    echo "🧹 Cleaning up the workspace to prevent the server disk from becoming full."
+                    cleanWs()
+                    echo "✨ Workspace cleaned successfully."
                 } catch (Exception e) {
-                    echo "⚠️ Cleanup was skipped because the workspace was not ready or initialized."
+                    echo "⚠️ Cleanup was skipped because the workspace was not ready."
+                }
+            }
+
+            // 2. Sending Telegram Notifications
+            script {
+                try {
+                    echo "📱 Sending notification to Telegram..."
+
+                    def buildStatus = currentBuild.currentResult ?: 'SUCCESS'
+                    def statusEmoji = (buildStatus == 'SUCCESS') ? '✅' : '❌'
+                    def targetEnv = params.DEPLOY_ENV ?: 'N/A'
+                    
+                    def tgMessage = """
+${statusEmoji} *Jenkins Pipeline Update* ${statusEmoji}
+
+*Project:* ${env.JOB_NAME}
+*Build No:* #${env.BUILD_NUMBER}
+*Environment:* ${targetEnv}
+*Status:* ${buildStatus}
+
+[📝 Klik untuk melihat log build](${env.BUILD_URL})
+                    """
+
+                    withCredentials([string(credentialsId: 'telegram-bot-token', variable: 'TELEGRAM_TOKEN')]) {
+                        def chatId = "-1003786747095"
+                        
+                        sh """
+                            curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage" \
+                            -d chat_id="${chatId}" \
+                            -d parse_mode="Markdown" \
+                            --data-urlencode text="${tgMessage}"
+                        """
+                    }
+                    echo "📨 Telegram notification successfully sent."
+                } catch (Exception e) {
+                    echo "⚠️ Failed to send Telegram notification: ${e.getMessage()}"
                 }
             }
         }
