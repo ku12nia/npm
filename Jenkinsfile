@@ -12,7 +12,7 @@ pipeline {
         buildDiscarder(logRotator(numToKeepStr: '10'))
     }
     
-    // Automatic trigger from GitHub/Smee.io
+    // Automatic trigger from GitHub/Smee.io (Ensure the Webhook on GitHub is set to "Just the push event")
     triggers {
         githubPush()
     }
@@ -28,14 +28,15 @@ pipeline {
                     def isWebhook = buildCauses.any { it._class?.contains('GitHubPushCause') || it._class?.contains('SCMTriggerCause') }
                     
                     if (isWebhook) {
-                        // If triggered automatically by a webhook, we lock the env to 'dev' (Because the standard pipeline cannot yet read dynamic branches from a webhook, unlike a Multibranch Pipeline)
+                        // If triggered automatically by a webhook, we lock the env to 'dev'
                         env.TARGET_ENV = 'dev'
                         echo "🔄 Trigger otomatis dari Webhook terdeteksi. Memaksa environment ke: ${env.TARGET_ENV}"
                     } else {
-                        // If triggered manually (by clicking a button in Jenkins), use the selection from the parameter dropdown
+                        // If triggered manually (by clicking a button in Jenkins)
                         env.TARGET_ENV = params.DEPLOY_ENV
                         echo "👤 Trigger manual terdeteksi. Menggunakan environment: ${env.TARGET_ENV}"
                     }
+                    
                     currentBuild.displayName = "#${env.PADDED_BUILD_NUMBER} - ${env.TARGET_ENV}"
                 }
             }
@@ -45,7 +46,6 @@ pipeline {
         stage('1. Checkout Code') {
             steps {
                 script {
-                    // Gunakan env.TARGET_ENV sebagai acuan branch
                     def targetBranch = (env.TARGET_ENV == 'prod') ? 'main' : env.TARGET_ENV
                     
                     if (env.LOCAL_SRC_PATH) {
@@ -145,7 +145,7 @@ pipeline {
         stage('4. Build / Promote & Push Docker Image') {
             steps {
                 script {
-                    def targetEnv = env.TARGET_ENV // Menggunakan TARGET_ENV
+                    def targetEnv = env.TARGET_ENV
                     def imageRepo = "ku12nia/nodejs" 
                     def newImageTag = "${env.PADDED_BUILD_NUMBER}-${targetEnv}"
                     
@@ -202,7 +202,7 @@ pipeline {
         stage('5. Update Manifest & Push ke Git') {
             steps {
                 script {
-                    def targetEnv = env.TARGET_ENV // Menggunakan TARGET_ENV
+                    def targetEnv = env.TARGET_ENV
                     def targetBranch = (targetEnv == 'prod') ? 'main' : targetEnv
                     def newImageTag = "${env.PADDED_BUILD_NUMBER}-${targetEnv}"
                     def targetValuesFile = "k8s/helm-chart/values-${targetEnv}.yaml"
@@ -248,7 +248,7 @@ pipeline {
         stage('6. Trigger ArgoCD Sync CLI') {
             steps {
                 script {
-                    def targetEnv = env.TARGET_ENV // Menggunakan TARGET_ENV
+                    def targetEnv = env.TARGET_ENV
                     def targetBranch = (targetEnv == 'prod') ? 'main' : targetEnv
                     def appName = "node-app-${targetEnv}" 
                     def namespace = "${targetEnv}-apps" 
@@ -308,21 +308,19 @@ pipeline {
                     def statusEmoji = (buildStatus == 'SUCCESS') ? '✅' : '❌'
                     def targetEnv = env.TARGET_ENV ?: 'N/A'
                     // Compile commit info, if available
-                    def commitInfo = env.GIT_COMMIT_MSG ? "\n*Commit:* ${env.GIT_COMMIT_MSG}\n*Author:* ${env.GIT_COMMIT_AUTHOR}" : ""
-                    // Adding ${commitInfo} to the message body
-// ENHANCE START
-def tgMessage = """
-==========================================================
-🚀 ${statusEmoji} *Jenkins Pipeline Update* ${statusEmoji}
-==========================================================
+                    def commitInfo = env.GIT_COMMIT_MSG ? "\n📌 *Commit:* ${env.GIT_COMMIT_MSG}\n👤 *Author:* ${env.GIT_COMMIT_AUTHOR}" : ""
+                    def tgMessage = """
+======================================
+🚀 *Jenkins Pipeline Update*
+======================================
 📌 *Project:* ${env.JOB_NAME}
-📌 *Build No:* #${env.BUILD_NUMBER}
+🏷️ *Build No:* #${env.BUILD_NUMBER}
 🌿 *Environment:* ${targetEnv}${commitInfo}
-🏷️  *Status:* ${buildStatus}
-==========================================================
+${statusEmoji} *Status:* ${buildStatus}
+======================================
 [📝 Klik untuk melihat log build](${env.BUILD_URL})
                     """
-// ENHANCE STOP
+
                     withCredentials([string(credentialsId: 'telegram-bot-token', variable: 'TELEGRAM_TOKEN')]) {
                         def chatId = "-1003786747095"
                         sh """

@@ -16,7 +16,7 @@ services:
       - ${LOCAL_PROJECT_PATH}:${WORKSPACE_DIR}
     environment:
       - GIT_SSL_NO_VERIFY=true
-      - LOCAL_SRC_PATH=${WORKSPACE_DIR}
+      # - LOCAL_SRC_PATH=${WORKSPACE_DIR}
     extra_hosts:
       - "host.docker.internal:host-gateway"
       - "argocd.local:host-gateway"
