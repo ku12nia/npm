@@ -62,11 +62,22 @@ services:
     container_name: nexus
     restart: unless-stopped
     ports:
-      - "8081:8081" # Port UI default Nexus dipindah ke 8081
+      - "8081:8081" # Port UI default Nexus
       - "8082:8083" # NPM Proxy Access
       - "8084:8084" # Akses Docker Hosted
     volumes:
       - nexus_data:/nexus-data
+    networks:
+      - devops-network
+  
+  # --- SMEE CLIENT (GITHUB WEBHOOK FORWARDER) ---
+  smee:
+    image: node:22-alpine
+    container_name: smee-client
+    command: npx --yes smee-client -u https://smee.io/SXA0wgagJl6hvkFk -t http://jenkins:8080/github-webhook/
+    restart: unless-stopped
+    depends_on:
+      - jenkins
     networks:
       - devops-network
 

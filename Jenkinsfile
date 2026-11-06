@@ -1,30 +1,53 @@
 pipeline {
     agent any
-    // Parameters: Prompts the user to select the target environment (dev, staging, or prod), specify an IMAGE_TAG_TO_PROMOTE when deploying to upper environments, and indicate if the Docker Hub repository is private
+    
+    // Parameters: User input provided when running manually (Build with Parameters)
     parameters {
         choice(name: 'DEPLOY_ENV', choices: ['dev', 'staging', 'prod'], description: 'Select the target environment for deployment.')
         string(name: 'IMAGE_TAG_TO_PROMOTE', defaultValue: '', description: 'Enter the Image Tag from the stable Dev/Staging environment. Leave blank if env = dev.')
         booleanParam(name: 'IS_PRIVATE_REPO', defaultValue: false, description: 'Check this box if the Docker Hub repository is private.')
     }
-    // Options: Uses buildDiscarder with logRotator to keep only the last 10 build logs, preventing the Jenkins server disk from filling up.
+    
     options {
         buildDiscarder(logRotator(numToKeepStr: '10'))
     }
+    
+    // Automatic trigger from GitHub/Smee.io
+    triggers {
+        githubPush()
+    }
+
     stages {
-        // Stage 0. Setup Build Name: Formats the build number (padding it to two digits) and customizes the build display name in the Jenkins dashboard (e.g., #01 - dev).
+        // Stage 0. Setup Build Name & Dynamic Environment
         stage('0. Setup Build Name') {
             steps {
                 script {
                     env.PADDED_BUILD_NUMBER = String.format("%02d", env.BUILD_NUMBER.toInteger())
-                    currentBuild.displayName = "#${env.PADDED_BUILD_NUMBER} - ${params.DEPLOY_ENV}"
+                    // Detect whether this build was triggered by a Webhook or manually
+                    def buildCauses = currentBuild.getBuildCauses()
+                    def isWebhook = buildCauses.any { it._class?.contains('GitHubPushCause') || it._class?.contains('SCMTriggerCause') }
+                    
+                    if (isWebhook) {
+                        // If triggered automatically by a webhook, we lock the env to 'dev' (Because the standard pipeline cannot yet read dynamic branches from a webhook, unlike a Multibranch Pipeline)
+                        env.TARGET_ENV = 'dev'
+                        echo "🔄 Trigger otomatis dari Webhook terdeteksi. Memaksa environment ke: ${env.TARGET_ENV}"
+                    } else {
+                        // If triggered manually (by clicking a button in Jenkins), use the selection from the parameter dropdown
+                        env.TARGET_ENV = params.DEPLOY_ENV
+                        echo "👤 Trigger manual terdeteksi. Menggunakan environment: ${env.TARGET_ENV}"
+                    }
+                    currentBuild.displayName = "#${env.PADDED_BUILD_NUMBER} - ${env.TARGET_ENV}"
                 }
             }
         }
-        // Stage 1. Checkout Code: Determines the target GitHub branch based on the deployment environment (main for production, or the respective environment name for dev/staging). It also supports a local directory mode if LOCAL_SRC_PATH is configured.
+
+        // Stage 1. Checkout Code
         stage('1. Checkout Code') {
             steps {
                 script {
-                    def targetBranch = (params.DEPLOY_ENV == 'prod') ? 'main' : params.DEPLOY_ENV
+                    // Gunakan env.TARGET_ENV sebagai acuan branch
+                    def targetBranch = (env.TARGET_ENV == 'prod') ? 'main' : env.TARGET_ENV
+                    
                     if (env.LOCAL_SRC_PATH) {
                         echo "💻 Local Directory Mode Active!"
                         if (!fileExists('Jenkinsfile')) {
@@ -49,6 +72,13 @@ pipeline {
                                 ]]
                             ])
                             echo "✅ Successfully checked out from branch: ${targetBranch}."
+
+                            // Git commit info extraction
+                            env.GIT_COMMIT_MSG = sh(script: 'git log -1 --pretty=%B', returnStdout: true).trim()
+                            env.GIT_COMMIT_AUTHOR = sh(script: 'git log -1 --pretty=%an', returnStdout: true).trim()
+                            echo "Trigger disebabkan oleh Push dari: ${env.GIT_COMMIT_AUTHOR}"
+                            echo "Pesan Commit: ${env.GIT_COMMIT_MSG}"
+
                         } catch (Exception e) {
                             echo "❌ Failed to check out code from branch: ${targetBranch}."
                             error("Pipeline stopped because the repository checkout failed: ${e.getMessage()}")
@@ -57,10 +87,11 @@ pipeline {
                 }
             }
         }
-        // Stage 2. Test App via Docker: Runs exclusively in the dev environment. It spins up a temporary node:22-alpine container to install dependencies and execute unit tests via Jest, publishing the JUnit XML test results.
+
+        // Stage 2. Test App via Docker
         stage('2. Test App via Docker') {
             when {
-                environment name: 'DEPLOY_ENV', value: 'dev'
+                environment name: 'TARGET_ENV', value: 'dev'
             }
             steps {
                 script {
@@ -89,10 +120,11 @@ pipeline {
                 }
             }
         }
-        // Stage 3. Approval Gate (Production): Pauses the pipeline for up to 1 hour, requiring manual approval from an administrator before allowing any deployment to proceed to production.
+
+        // Stage 3. Approval Gate (Production)
         stage('3. Approval Gate (Production)') {
             when {
-                environment name: 'DEPLOY_ENV', value: 'prod'
+                environment name: 'TARGET_ENV', value: 'prod'
             }
             steps {
                 script {
@@ -108,21 +140,21 @@ pipeline {
                 }
             }
         }
-        // Stage 4. Build / Promote & Push Docker Image: For Dev: Pulls the previous dev image for cache reference and For Staging/Prod: Skips building entirely. Instead, it pulls the stable image specified by IMAGE_TAG_TO_PROMOTE
+
+        // Stage 4. Build / Promote & Push Docker Image
         stage('4. Build / Promote & Push Docker Image') {
             steps {
                 script {
-                    def targetEnv = params.DEPLOY_ENV
+                    def targetEnv = env.TARGET_ENV // Menggunakan TARGET_ENV
                     def imageRepo = "ku12nia/nodejs" 
                     def newImageTag = "${env.PADDED_BUILD_NUMBER}-${targetEnv}"
+                    
                     dir('src') {
-                        // For Dev: Pulls the previous dev image for cache reference, builds a new Docker image using BuildKit caching (--cache-from), and pushes it to Docker Hub.
                         if (targetEnv == 'dev') {
                             echo "🔍 Pulling the previous dev image for cache reference."
                             sh "docker pull ${imageRepo}:dev-cache || true"
                             echo "🏗️ Building a new Docker image (using BuildKit cache)."
                             sh "DOCKER_BUILDKIT=1 docker build --cache-from ${imageRepo}:dev-cache --build-arg BUILDKIT_INLINE_CACHE=1 -t ${imageRepo}:${newImageTag} -t ${imageRepo}:dev-cache ."
-                        //  For Staging/Prod: Skips building entirely. Instead, it pulls the stable image specified by IMAGE_TAG_TO_PROMOTE, re-tags it for the target environment, and pushes it.             
                         } else {
                             if (!params.IMAGE_TAG_TO_PROMOTE?.trim()) {
                                 error("❌ Deployment to ${targetEnv} has been cancelled! The 'IMAGE_TAG_TO_PROMOTE' parameter must be provided with a stable image tag (e.g., 01-dev).")
@@ -137,14 +169,10 @@ pipeline {
                             }
                         }
                     }
-                    //  Environment-Specific Routing:
-                    //  If dev: The pipeline pushes an additional dev-cache tag. This acts as a caching reference for Docker BuildKit, which significantly speeds up subsequent image builds in the development environment.
-                    //  If prod: The pipeline pushes an additional latest tag. This guarantees that the production repository always has a definitive pointer to the most recent stable release. It also includes error handling to abort if the latest push fails.
 
                     echo "🔐 Performing automatic authentication to Docker Hub."
                     withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', passwordVariable: 'DOCKER_PASS', usernameVariable: 'DOCKER_USER')]) {
                         try {
-                            // Docker Login.
                             sh '''
                                 set +x
                                 echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
@@ -162,20 +190,19 @@ pipeline {
                         } catch (Exception e) {
                             error("❌ Process Docker push failed: ${e.getMessage()}")
                         } finally {
-                            // Always execute Logout, even if the push fails.
                             sh "docker logout"
                             echo "🔒 Docker logged out successfully. State cleaned."
                         }
                     } 
-
                 }
             }
         }
-        // Stage 5: Update Manifest & Push to Gi. This stage automates the GitOps workflow by updating your infrastructure repository to point to the newly built Docker image. Update: Replaces the old image tag in the Helm values.yaml file with the new one, Commit & Push: Pushes the updated file to GitHub. It uses [skip ci] in the commit message to prevent Jenkins from triggering another build in an infinite loop, and Cleanup: Removes the Git credentials from the Jenkins server to keep the environment clean (stateless)
+
+        // Stage 5: Update Manifest & Push ke Git
         stage('5. Update Manifest & Push ke Git') {
             steps {
                 script {
-                    def targetEnv = params.DEPLOY_ENV
+                    def targetEnv = env.TARGET_ENV // Menggunakan TARGET_ENV
                     def targetBranch = (targetEnv == 'prod') ? 'main' : targetEnv
                     def newImageTag = "${env.PADDED_BUILD_NUMBER}-${targetEnv}"
                     def targetValuesFile = "k8s/helm-chart/values-${targetEnv}.yaml"
@@ -190,20 +217,18 @@ pipeline {
                     🏷️  New Image Tag: ${newImageTag}
                     ==========================================================
                     """
-                    // 1. Modify values ​​files using sed
                     sh "sed -i 's/tag: .*/tag: \"${newImageTag}\"/g' ${targetValuesFile}"
                     echo "✅ File ${targetValuesFile} has been successfully updated with tag: ${newImageTag}"
-                    // 2. Set up local Git configuration in the Jenkins workspace
+                    
                     sh 'git config --global user.email "dedimk.devops@gmail.com"'
                     sh 'git config --global user.name "Dedi Mohammad Kurnia"'
-                    // 3. Checking Git status (porcelain returns an empty string if clean)
+                    
                     def changes = sh(script: 'git status --porcelain', returnStdout: true).trim()
                     if (changes) {
                         echo "🔍 File changes detected:\n${changes}"
                         echo "⚙️ Performing commit & push process."
                         sh "git add ${targetValuesFile}" 
                         sh "git commit -m 'ci(argocd): update helm image tag for ${targetEnv} to ${newImageTag} [skip ci]'"
-                        // 4. Push to GitHub with credentials
                         withCredentials([gitUsernamePassword(credentialsId: 'github-creds')]) {
                             def gitPushStatus = sh(script: "git push origin HEAD:${targetBranch}", returnStatus: true)
                             if (gitPushStatus == 0) {
@@ -219,16 +244,15 @@ pipeline {
             }
         }
 
-        // Stage 6: Trigger ArgoCD Sync CLI. Setup: Securely logs into ArgoCD and ensures the application is registered to the correct GitHub repo and Kubernetes namespace, Sync: Forces an immediate deployment, bypassing ArgoCD's default 3-minute polling delay, Cleanup: Securely logs out of ArgoCD to destroy the active session token.
+        // Stage 6: Trigger ArgoCD Sync CLI
         stage('6. Trigger ArgoCD Sync CLI') {
             steps {
                 script {
-                    def targetEnv = params.DEPLOY_ENV
+                    def targetEnv = env.TARGET_ENV // Menggunakan TARGET_ENV
                     def targetBranch = (targetEnv == 'prod') ? 'main' : targetEnv
                     def appName = "node-app-${targetEnv}" 
                     def namespace = "${targetEnv}-apps" 
                     def targetValuesFile = "values-${targetEnv}.yaml"
-                    // def argocdServer = "host.docker.internal:80"
                     def argocdServer = "argocd.local"
 
                     withCredentials([usernamePassword(credentialsId: 'argocd-creds', passwordVariable: 'ARGOCD_PASS', usernameVariable: 'ARGOCD_USER')]) {
@@ -255,7 +279,6 @@ pipeline {
                             """
                             echo "🔄 ArgoCD synchronization was successful for ${appName}!"
                         } finally {
-                            // Pastikan Logout setelah sync atau jika terjadi error
                             sh "argocd logout ${argocdServer} || true"
                             echo "🔒 ArgoCD logged out successfully. State cleaned."
                         }
@@ -263,11 +286,10 @@ pipeline {
                 }
             }
         }
-        // NEXT STAGE
     }    
     post {
         always {
-            // 1. Cleaning the Workspace (State Clean) - Be careful—your local workspace will be deleted.
+            // 1. Cleaning Workspace
             script {
                 try {
                     echo "🧹 Cleaning up the workspace to prevent the server disk from becoming full."
@@ -278,29 +300,31 @@ pipeline {
                 }
             }
 
-            // 2. Sending Telegram Notifications
+            // 2. Telegram Notification
             script {
                 try {
                     echo "📱 Sending notification to Telegram..."
-
                     def buildStatus = currentBuild.currentResult ?: 'SUCCESS'
                     def statusEmoji = (buildStatus == 'SUCCESS') ? '✅' : '❌'
-                    def targetEnv = params.DEPLOY_ENV ?: 'N/A'
-                    
-                    def tgMessage = """
-${statusEmoji} *Jenkins Pipeline Update* ${statusEmoji}
-
-*Project:* ${env.JOB_NAME}
-*Build No:* #${env.BUILD_NUMBER}
-*Environment:* ${targetEnv}
-*Status:* ${buildStatus}
-
+                    def targetEnv = env.TARGET_ENV ?: 'N/A'
+                    // Compile commit info, if available
+                    def commitInfo = env.GIT_COMMIT_MSG ? "\n*Commit:* ${env.GIT_COMMIT_MSG}\n*Author:* ${env.GIT_COMMIT_AUTHOR}" : ""
+                    // Adding ${commitInfo} to the message body
+// ENHANCE START
+def tgMessage = """
+==========================================================
+🚀 ${statusEmoji} *Jenkins Pipeline Update* ${statusEmoji}
+==========================================================
+📌 *Project:* ${env.JOB_NAME}
+📌 *Build No:* #${env.BUILD_NUMBER}
+🌿 *Environment:* ${targetEnv}${commitInfo}
+🏷️  *Status:* ${buildStatus}
+==========================================================
 [📝 Klik untuk melihat log build](${env.BUILD_URL})
                     """
-
+// ENHANCE STOP
                     withCredentials([string(credentialsId: 'telegram-bot-token', variable: 'TELEGRAM_TOKEN')]) {
                         def chatId = "-1003786747095"
-                        
                         sh """
                             curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage" \
                             -d chat_id="${chatId}" \
