@@ -290,15 +290,15 @@ pipeline {
     post {
         always {
             // 1. Cleaning Workspace
-            script {
-                try {
-                    echo "🧹 Cleaning up the workspace to prevent the server disk from becoming full."
-                    cleanWs()
-                    echo "✨ Workspace cleaned successfully."
-                } catch (Exception e) {
-                    echo "⚠️ Cleanup was skipped because the workspace was not ready."
-                }
-            }
+            // script {
+            //     try {
+            //         echo "🧹 Cleaning up the workspace to prevent the server disk from becoming full."
+            //         cleanWs()
+            //         echo "✨ Workspace cleaned successfully."
+            //     } catch (Exception e) {
+            //         echo "⚠️ Cleanup was skipped because the workspace was not ready."
+            //     }
+            // }
 
             // 2. Telegram Notification
             script {

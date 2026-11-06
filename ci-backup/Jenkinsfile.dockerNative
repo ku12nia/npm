@@ -268,15 +268,15 @@ pipeline {
     post {
         always {
             // 1. Cleaning the Workspace (State Clean) - Be careful—your local workspace will be deleted.
-            script {
-                try {
-                    echo "🧹 Cleaning up the workspace to prevent the server disk from becoming full."
-                    cleanWs()
-                    echo "✨ Workspace cleaned successfully."
-                } catch (Exception e) {
-                    echo "⚠️ Cleanup was skipped because the workspace was not ready."
-                }
-            }
+            // script {
+            //     try {
+            //         echo "🧹 Cleaning up the workspace to prevent the server disk from becoming full."
+            //         cleanWs()
+            //         echo "✨ Workspace cleaned successfully."
+            //     } catch (Exception e) {
+            //         echo "⚠️ Cleanup was skipped because the workspace was not ready."
+            //     }
+            // }
 
             // 2. Sending Telegram Notifications
             script {
@@ -288,13 +288,14 @@ pipeline {
                     def targetEnv = params.DEPLOY_ENV ?: 'N/A'
                     
                     def tgMessage = """
-${statusEmoji} *Jenkins Pipeline Update* ${statusEmoji}
-
-*Project:* ${env.JOB_NAME}
-*Build No:* #${env.BUILD_NUMBER}
-*Environment:* ${targetEnv}
-*Status:* ${buildStatus}
-
+======================================
+🚀 *Jenkins Pipeline Update*
+======================================
+📌 *Project:* ${env.JOB_NAME}
+🏷️ *Build No:* #${env.BUILD_NUMBER}
+🌿 *Environment:* ${targetEnv}${commitInfo}
+${statusEmoji} *Status:* ${buildStatus}
+======================================
 [📝 Klik untuk melihat log build](${env.BUILD_URL})
                     """
 
