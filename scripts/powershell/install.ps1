@@ -72,10 +72,12 @@ $imageExists = docker images -q $composeImageName 2>$null
 if ([string]::IsNullOrWhiteSpace($imageExists)) {
     Write-Log "⚙️ Image not yet available locally. Initiating initial build process." -ForegroundColor Cyan
     # docker build -t npm-jenkins -f Dockerfile.win .
-    docker compose up -d --build
+    # docker compose up -d --build
+    docker compose up -d --force-recreate
 } else {
     Write-Log "✅ Image '$composeImageName' Already available. Launching the container immediately." -ForegroundColor Green
-    docker compose up -d
+    # docker compose up -d
+    docker compose up -d --force-recreate
 }
 Write-Log "`nWaiting for Docker containers to initialize (20s)..." -ForegroundColor Magenta
 Start-Sleep -Seconds 20
