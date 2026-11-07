@@ -261,10 +261,8 @@ pipeline {
                     def targetBranch = (targetEnv == 'prod') ? 'main' : targetEnv
                     def appName = "node-app-${targetEnv}" 
                     def namespace = "${targetEnv}-apps" 
-                    
-                    def targetValuesFile = "k8s/helm-chart/values-${targetEnv}.yaml"
                     def argocdServer = "argocd.local"
-
+                    def argocdValuesFile = "values-${targetEnv}.yaml"
                     withCredentials([usernamePassword(credentialsId: 'argocd-creds', passwordVariable: 'ARGOCD_PASS', usernameVariable: 'ARGOCD_USER')]) {
                         try {
                             sh """
@@ -276,7 +274,7 @@ pipeline {
                                   --repo https://github.com/ku12nia/npm.git \
                                   --path k8s/helm-chart \
                                   --revision ${targetBranch} \
-                                  --values ${targetValuesFile} \
+                                  --values ${argocdValuesFile} \
                                   --dest-server https://kubernetes.default.svc \
                                   --dest-namespace ${namespace} \
                                   --sync-option CreateNamespace=true \
@@ -295,6 +293,7 @@ pipeline {
                 }
             }
         }
+    // Next Stage
     }    
     post {
         always {
@@ -327,7 +326,7 @@ pipeline {
 🌿 *Environment:* ${targetEnv}${commitInfo}
 ${statusEmoji} *Status:* ${buildStatus}
 ===============================
-[📝 Klik untuk melihat log build](${env.BUILD_URL})
+[📝 Klik untuk melihat log build (${env.BUILD_URL})]
                     """
 
                     withCredentials([string(credentialsId: 'telegram-bot-token', variable: 'TELEGRAM_TOKEN')]) {
