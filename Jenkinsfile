@@ -37,7 +37,7 @@ pipeline {
                         echo "👤 Trigger manual terdeteksi. Menggunakan environment: ${env.TARGET_ENV}"
                     }
                     
-                    currentBuild.displayName = "#${env.PADDED_BUILD_NUMBER} - ${env.TARGET_ENV}"
+                    currentBuild.displayName = "#${env.PADDED_BUILD_NUMBER} ${env.TARGET_ENV}"
                 }
             }
         }
@@ -46,7 +46,8 @@ pipeline {
         stage('1. Checkout Code') {
             steps {
                 script {
-                    def targetBranch = (env.TARGET_ENV == 'prod') ? 'main' : env.TARGET_ENV
+                    // Semua environment menggunakan branch source of truth (dev atau main)
+                    def targetBranch = (env.TARGET_ENV == 'prod') ? 'main' : 'dev'
                     
                     if (env.LOCAL_SRC_PATH) {
                         echo "💻 Local Directory Mode Active!"
@@ -198,15 +199,14 @@ pipeline {
             }
         }
 
-        // Stage 5: Update Manifest & Push to Git
+        // Stage 5: Update Manifest & Push to Git (Hanya update lokal & commit DEV)
         stage('5. Update Manifest & Push to Git') {
             steps {
                 script {
                     def targetEnv = env.TARGET_ENV
-                    def targetBranch = (targetEnv == 'prod') ? 'main' : targetEnv
+                    def targetBranch = (targetEnv == 'prod') ? 'main' : 'dev' 
                     def newImageTag = "${env.PADDED_BUILD_NUMBER}-${targetEnv}"
                     
-                    // [PERBAIKAN]: Pastikan selalu kembali ke root workspace (keluar dari folder 'src' jika sebelumnya masuk ke sana)
                     dir("${env.WORKSPACE}") {
                         def targetValuesFile = "k8s/helm-chart/values-${targetEnv}.yaml"
                         
@@ -216,37 +216,47 @@ pipeline {
                         ==========================================================
                         📌 Target Env   : ${targetEnv}
                         📌 Target File  : ${targetValuesFile}
-                        🌿 Target Branch: ${targetBranch}
                         🏷️  New Image Tag: ${newImageTag}
                         ==========================================================
                         """
                         
-                        if (!fileExists(targetValuesFile)) {
-                            error("❌ File manifest ${targetValuesFile} not found in the workspace root!")
-                        }
-                        
-                        sh "sed -i 's/tag: .*/tag: \"${newImageTag}\"/g' ${targetValuesFile}"
-                        echo "✅ File ${targetValuesFile} has been successfully updated with tag: ${newImageTag}"
-                        
-                        sh 'git config --global user.email "dedimk.devops@gmail.com"'
-                        sh 'git config --global user.name "Dedi Mohammad Kurnia"'
-                        
-                        def changes = sh(script: 'git status --porcelain', returnStdout: true).trim()
-                        if (changes) {
-                            echo "🔍 File changes detected:\n${changes}"
-                            echo "⚙️ Performing commit & push process."
-                            sh "git add ${targetValuesFile}" 
-                            sh "git commit -m 'ci(argocd): update helm image tag for ${targetEnv} to ${newImageTag} [skip ci]'"
-                            withCredentials([gitUsernamePassword(credentialsId: 'github-creds')]) {
-                                def gitPushStatus = sh(script: "git push origin HEAD:${targetBranch}", returnStatus: true)
-                                if (gitPushStatus == 0) {
-                                    echo "🎉 [SUCCESS] Successfully pushed Helm manifest update to the branch: ${targetBranch}!"
-                                } else {
-                                    unstable("⚠️ [WARNING] Failed to push to GitHub. Check the logs or the 'github-creds' credentials.")
+                        // Eksekusi update file dan push git HANYA jika environment adalah 'dev'
+                        if (targetEnv == 'dev') {
+                            if (!fileExists(targetValuesFile)) {
+                                error("❌ File manifest ${targetValuesFile} tidak ditemukan di root workspace!")
+                            }
+                            
+                            sh "sed -i 's/tag: .*/tag: \"${newImageTag}\"/g' ${targetValuesFile}"
+                            echo "✅ File ${targetValuesFile} has been successfully updated with tag: ${newImageTag}"
+                            
+                            sh 'git config --global user.email "dedimk.devops@gmail.com"'
+                            sh 'git config --global user.name "Dedi Mohammad Kurnia"'
+                            
+                            def changes = sh(script: 'git status --porcelain', returnStdout: true).trim()
+                            if (changes) {
+                                echo "🔍 File changes detected:\n${changes}"
+                                echo "⚙️ Performing commit & push process to branch: ${targetBranch}."
+                                sh "git add ${targetValuesFile}" 
+                                sh "git commit -m 'ci(argocd): update helm image tag for ${targetEnv} to ${newImageTag} [skip ci]'"
+                                
+                                withCredentials([gitUsernamePassword(credentialsId: 'github-creds')]) {
+                                    sh "git stash"
+                                    sh "git pull origin ${targetBranch} --rebase || true"
+                                    sh "git stash pop || true"
+                                    
+                                    def gitPushStatus = sh(script: "git push origin HEAD:${targetBranch}", returnStatus: true)
+                                    if (gitPushStatus == 0) {
+                                        echo "🎉 [SUCCESS] Successfully pushed Helm manifest update to the branch: ${targetBranch}!"
+                                    } else {
+                                        unstable("⚠️ [WARNING] Failed to push to GitHub. Check credentials.")
+                                    }
                                 }
+                            } else {
+                                echo "⚠️ [SKIPPED] No changes to the manifest."
                             }
                         } else {
-                            echo "⚠️ [SKIPPED] No changes to the manifest; skipping the git commit & push process."
+                            echo "ℹ️ [SKIPPED] Push manifest ke Git diabaikan untuk environment ${targetEnv.toUpperCase()}."
+                            echo "💡 Silakan update manifest values secara manual via Pull Request sesuai prinsip GitOps."
                         }
                     }
                 }
@@ -258,18 +268,20 @@ pipeline {
             steps {
                 script {
                     def targetEnv = env.TARGET_ENV
-                    def targetBranch = (targetEnv == 'prod') ? 'main' : targetEnv
+                    def targetBranch = (targetEnv == 'prod') ? 'main' : 'dev'
                     def appName = "node-app-${targetEnv}" 
                     def namespace = "${targetEnv}-apps" 
                     def argocdServer = "argocd.local"
                     def argocdValuesFile = "values-${targetEnv}.yaml"
+
                     withCredentials([usernamePassword(credentialsId: 'argocd-creds', passwordVariable: 'ARGOCD_PASS', usernameVariable: 'ARGOCD_USER')]) {
                         try {
                             sh """
                                 set +x
                                 echo "🔐 Logging in to ArgoCD via CLI..."
                                 argocd login ${argocdServer} --username \$ARGOCD_USER --password \$ARGOCD_PASS --plaintext --insecure --grpc-web
-                                echo "📝 Ensuring application ${appName} is registered..."
+                                
+                                echo "📝 Ensuring application ${appName} is registered (tracking branch: ${targetBranch})..."
                                 argocd app create ${appName} \
                                   --repo https://github.com/ku12nia/npm.git \
                                   --path k8s/helm-chart \
@@ -293,48 +305,48 @@ pipeline {
                 }
             }
         }
-    // Next Stage
     }    
     post {
         always {
             // 1. Cleaning Workspace
-            // script {
-            //     try {
-            //         echo "🧹 Cleaning up the workspace to prevent the server disk from becoming full."
-            //         cleanWs()
-            //         echo "✨ Workspace cleaned successfully."
-            //     } catch (Exception e) {
-            //         echo "⚠️ Cleanup was skipped because the workspace was not ready."
-            //     }
-            // }
+            script {
+                try {
+                    echo "🧹 Cleaning up the workspace to prevent the server disk from becoming full."
+                    cleanWs(deleteDirs: true, disableDeferredWipeout: true)
+                    echo "✨ Workspace cleaned successfully."
+                } catch (Exception e) {
+                    echo "⚠️ Cleanup was skipped because the workspace was not ready."
+                }
+            }
 
-            // 2. Telegram Notification
+            // 2. Telegram Notification (Format HTML Diperbaiki)
             script {
                 try {
                     echo "📱 Sending notification to Telegram..."
                     def buildStatus = currentBuild.currentResult ?: 'SUCCESS'
                     def statusEmoji = (buildStatus == 'SUCCESS') ? '✅' : '❌'
                     def targetEnv = env.TARGET_ENV ?: 'N/A'
-                    // Compile commit info, if available
-                    def commitInfo = env.GIT_COMMIT_MSG ? "\n📌 *Commit:* ${env.GIT_COMMIT_MSG}\n👤 *Author:* ${env.GIT_COMMIT_AUTHOR}" : ""
-                    def tgMessage = """
-======================================
-🚀 <b>Jenkins Pipeline Update</b>
-======================================
-📌 <b>Project:</b> ${env.JOB_NAME}
-🏷️ <b>Build No:</b> #${env.BUILD_NUMBER}
-🌿 <b>Environment:</b> ${env.TARGET_ENV ?: 'dev'}
-${statusEmoji} <b>Status:</b> ${buildStatus}
-======================================
-📝 <a href="${buildUrl}">Klik untuk melihat log build</a>
-                    """
+                    def buildUrl = "${env.BUILD_URL}"
+                    
+                    // Compile commit info HTML, if available
+                    def commitInfo = env.GIT_COMMIT_MSG ? "\n📌 <b>Commit:</b> ${env.GIT_COMMIT_MSG}\n👤 <b>Author:</b> ${env.GIT_COMMIT_AUTHOR}" : ""
+                    
+                    def tgMessage = "===============================\n" +
+                                    "🚀 <b>Jenkins Pipeline Update</b>\n" +
+                                    "===============================\n" +
+                                    "📌 <b>Project:</b> ${env.JOB_NAME}\n" +
+                                    "🏷️ <b>Build No:</b> #${env.BUILD_NUMBER}\n" +
+                                    "🌿 <b>Environment:</b> ${targetEnv}${commitInfo}\n" +
+                                    "${statusEmoji} <b>Status:</b> ${buildStatus}\n" +
+                                    "===============================\n" +
+                                    "📝 <a href='${buildUrl}'>Klik untuk melihat log build</a>"
 
                     withCredentials([string(credentialsId: 'telegram-bot-token', variable: 'TELEGRAM_TOKEN')]) {
                         def chatId = "-1003786747095"
                         sh """
-                            curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage" \
+                            curl -s -X POST "https://api.telegram.org/bot\${TELEGRAM_TOKEN}/sendMessage" \
                             -d chat_id="${chatId}" \
-                            -d parse_mode="Markdown" \
+                            -d parse_mode="HTML" \
                             --data-urlencode text="${tgMessage}"
                         """
                     }
@@ -346,3 +358,34 @@ ${statusEmoji} <b>Status:</b> ${buildStatus}
         }
     }
 }
+
+// git credential-manager logout github.com
+// git credential-manager github list
+
+// 🚀 **Release PR: `dev` ➡️ `main`**
+
+// 📄 **Ringkasan**
+// Penggabungan *changes* dari branch `dev` ke `main` (atau target branch) untuk otomatisasi deployment service npm dan pembaruan pipeline CI/CD.
+
+// ⚙️ **Detail Perubahan (Changelog)**
+// - **CI/CD Pipeline (Jenkins):**
+//   - Update `Jenkinsfile` workflow untuk automated build & image tagging.
+// - **GitOps & Helm (ArgoCD):**
+//   - Update Helm chart values untuk service `npm` (image tag sync).
+//   - Konfigurasi auto-sync & prune logic di ArgoCD.
+// - **Dependencies & Config (Vault / MinIO / DB):**
+//   - *(Opsional)* Penyesuaian env vars/secrets atau migrasi database.
+
+// ---
+
+// ✅ **Checklist Verifikasi (Pre & Post Merge)**
+
+// **Pre-Merge (CI Phase)**
+// - [ ] **Jenkins Build:** Pipeline di Jenkins Local berhasil (*SUCCESS*).
+// - [ ] **Artifact Registry:** Container image / package sukses ter-push ke Nexus/DockerHub.
+// - [ ] **Secrets Check:** Tidak ada plaintext credentials/secrets yang ter-commit ke Git (menggunakan Vault).
+
+// **Post-Merge (CD & Monitoring Phase)**
+// - [ ] **ArgoCD Sync:** Status aplikasi di Argo CD Local berubah menjadi `Synced` & `Healthy`.
+// - [ ] **Telegram Alert:** Bot Telegram menerima notifikasi webhook status deployment.
+// - [ ] **Metrics & Monitoring:** Health check service `npm` normal di Grafana / Prometheus Local.
