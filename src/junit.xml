@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuites name="jest tests" tests="1" failures="0" errors="0" time="28.099">
-  <testsuite name="undefined" errors="0" failures="0" skipped="0" timestamp="2026-10-30T22:59:41" time="13.56" tests="1">
-    <testcase classname=" memvalidasi pipeline Jenkins agar lolos uji Jest" name=" memvalidasi pipeline Jenkins agar lolos uji Jest" time="0.019">
+<testsuites name="jest tests" tests="1" failures="0" errors="0" time="20.645">
+  <testsuite name="undefined" errors="0" failures="0" skipped="0" timestamp="2026-11-07T17:50:21" time="10.176" tests="1">
+    <testcase classname=" memvalidasi pipeline Jenkins agar lolos uji Jest" name=" memvalidasi pipeline Jenkins agar lolos uji Jest" time="0.015">
     </testcase>
   </testsuite>
 </testsuites>

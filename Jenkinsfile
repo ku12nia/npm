@@ -198,47 +198,56 @@ pipeline {
             }
         }
 
-        // Stage 5: Update Manifest & Push ke Git
-        stage('5. Update Manifest & Push ke Git') {
+        // Stage 5: Update Manifest & Push to Git
+        stage('5. Update Manifest & Push to Git') {
             steps {
                 script {
                     def targetEnv = env.TARGET_ENV
                     def targetBranch = (targetEnv == 'prod') ? 'main' : targetEnv
                     def newImageTag = "${env.PADDED_BUILD_NUMBER}-${targetEnv}"
-                    def targetValuesFile = "k8s/helm-chart/values-${targetEnv}.yaml"
                     
-                    echo """
-                    ==========================================================
-                    🚀 [GIT OPS] UPDATING HELM MANIFEST
-                    ==========================================================
-                    📌 Target Env   : ${targetEnv}
-                    📌 Target File  : ${targetValuesFile}
-                    🌿 Target Branch: ${targetBranch}
-                    🏷️  New Image Tag: ${newImageTag}
-                    ==========================================================
-                    """
-                    sh "sed -i 's/tag: .*/tag: \"${newImageTag}\"/g' ${targetValuesFile}"
-                    echo "✅ File ${targetValuesFile} has been successfully updated with tag: ${newImageTag}"
-                    
-                    sh 'git config --global user.email "dedimk.devops@gmail.com"'
-                    sh 'git config --global user.name "Dedi Mohammad Kurnia"'
-                    
-                    def changes = sh(script: 'git status --porcelain', returnStdout: true).trim()
-                    if (changes) {
-                        echo "🔍 File changes detected:\n${changes}"
-                        echo "⚙️ Performing commit & push process."
-                        sh "git add ${targetValuesFile}" 
-                        sh "git commit -m 'ci(argocd): update helm image tag for ${targetEnv} to ${newImageTag} [skip ci]'"
-                        withCredentials([gitUsernamePassword(credentialsId: 'github-creds')]) {
-                            def gitPushStatus = sh(script: "git push origin HEAD:${targetBranch}", returnStatus: true)
-                            if (gitPushStatus == 0) {
-                                echo "🎉 [SUCCESS] Successfully pushed Helm manifest update to the branch: ${targetBranch}!"
-                            } else {
-                                unstable("⚠️ [WARNING] Failed to push to GitHub. Check the logs or the 'github-creds' credentials.")
-                            }
+                    // [PERBAIKAN]: Pastikan selalu kembali ke root workspace (keluar dari folder 'src' jika sebelumnya masuk ke sana)
+                    dir("${env.WORKSPACE}") {
+                        def targetValuesFile = "k8s/helm-chart/values-${targetEnv}.yaml"
+                        
+                        echo """
+                        ==========================================================
+                        🚀 [GIT OPS] UPDATING HELM MANIFEST
+                        ==========================================================
+                        📌 Target Env   : ${targetEnv}
+                        📌 Target File  : ${targetValuesFile}
+                        🌿 Target Branch: ${targetBranch}
+                        🏷️  New Image Tag: ${newImageTag}
+                        ==========================================================
+                        """
+                        
+                        if (!fileExists(targetValuesFile)) {
+                            error("❌ File manifest ${targetValuesFile} not found in the workspace root!")
                         }
-                    } else {
-                        echo "⚠️ [SKIPPED] No changes to the manifest; skipping the git commit & push process."
+                        
+                        sh "sed -i 's/tag: .*/tag: \"${newImageTag}\"/g' ${targetValuesFile}"
+                        echo "✅ File ${targetValuesFile} has been successfully updated with tag: ${newImageTag}"
+                        
+                        sh 'git config --global user.email "dedimk.devops@gmail.com"'
+                        sh 'git config --global user.name "Dedi Mohammad Kurnia"'
+                        
+                        def changes = sh(script: 'git status --porcelain', returnStdout: true).trim()
+                        if (changes) {
+                            echo "🔍 File changes detected:\n${changes}"
+                            echo "⚙️ Performing commit & push process."
+                            sh "git add ${targetValuesFile}" 
+                            sh "git commit -m 'ci(argocd): update helm image tag for ${targetEnv} to ${newImageTag} [skip ci]'"
+                            withCredentials([gitUsernamePassword(credentialsId: 'github-creds')]) {
+                                def gitPushStatus = sh(script: "git push origin HEAD:${targetBranch}", returnStatus: true)
+                                if (gitPushStatus == 0) {
+                                    echo "🎉 [SUCCESS] Successfully pushed Helm manifest update to the branch: ${targetBranch}!"
+                                } else {
+                                    unstable("⚠️ [WARNING] Failed to push to GitHub. Check the logs or the 'github-creds' credentials.")
+                                }
+                            }
+                        } else {
+                            echo "⚠️ [SKIPPED] No changes to the manifest; skipping the git commit & push process."
+                        }
                     }
                 }
             }
@@ -290,15 +299,15 @@ pipeline {
     post {
         always {
             // 1. Cleaning Workspace
-            // script {
-            //     try {
-            //         echo "🧹 Cleaning up the workspace to prevent the server disk from becoming full."
-            //         cleanWs()
-            //         echo "✨ Workspace cleaned successfully."
-            //     } catch (Exception e) {
-            //         echo "⚠️ Cleanup was skipped because the workspace was not ready."
-            //     }
-            // }
+            script {
+                try {
+                    echo "🧹 Cleaning up the workspace to prevent the server disk from becoming full."
+                    cleanWs()
+                    echo "✨ Workspace cleaned successfully."
+                } catch (Exception e) {
+                    echo "⚠️ Cleanup was skipped because the workspace was not ready."
+                }
+            }
 
             // 2. Telegram Notification
             script {
@@ -310,14 +319,14 @@ pipeline {
                     // Compile commit info, if available
                     def commitInfo = env.GIT_COMMIT_MSG ? "\n📌 *Commit:* ${env.GIT_COMMIT_MSG}\n👤 *Author:* ${env.GIT_COMMIT_AUTHOR}" : ""
                     def tgMessage = """
-======================================
+===============================
 🚀 *Jenkins Pipeline Update*
-======================================
+===============================
 📌 *Project:* ${env.JOB_NAME}
 🏷️ *Build No:* #${env.BUILD_NUMBER}
 🌿 *Environment:* ${targetEnv}${commitInfo}
 ${statusEmoji} *Status:* ${buildStatus}
-======================================
+===============================
 [📝 Klik untuk melihat log build](${env.BUILD_URL})
                     """
 
