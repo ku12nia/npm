@@ -43,32 +43,32 @@ if (-not (Get-Command helm -ErrorAction SilentlyContinue)) {
     Write-Log "✅ Helm is already installed." -ForegroundColor Green
 }
 
-Write-Host "`n==========================================================" -ForegroundColor Cyan
-Write-Host "0.5. Automated Git Checkout (For local mode (dev) only; if using staging/prod, please clear the Docker volumes first.)" -ForegroundColor Yellow
-Write-Host "==========================================================" -ForegroundColor Cyan
-if ([string]::IsNullOrWhiteSpace($env:LOCAL_PROJECT_PATH)) {
-    Write-Log "⚠️ The LOCAL_PROJECT_PATH variable was not found in .env. Skipping the automatic clone process." -ForegroundColor Yellow
-} else {
-    if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
-        Write-Log "❌ Git is not detected on your Windows system! The script cannot perform an automatic clone." -ForegroundColor Red
-    } else {
-        if (-not (Test-Path "$($env:LOCAL_PROJECT_PATH)\.git")) {
-            Write-Log "🔍 Local repository not found at $($env:LOCAL_PROJECT_PATH). Starting the git clone process." -ForegroundColor Cyan
-            git clone https://github.com/ku12nia/npm.git $env:LOCAL_PROJECT_PATH
-            if ($LASTEXITCODE -eq 0) {
-                Write-Log "✅ Git clone successful!" -ForegroundColor Green
-            } else {
-                Write-Log "❌ Failed to perform git clone. Ensure that you have access to the repository." -ForegroundColor Red
-            }
-        } else {
-            Write-Log "✅ Local repository already exists. Pulling the latest updates (git pull)" -ForegroundColor Green
-            $currentPath = Get-Location
-            Set-Location $env:LOCAL_PROJECT_PATH
-            git pull
-            Set-Location $currentPath
-        }
-    }
-}
+# Write-Host "`n==========================================================" -ForegroundColor Cyan
+# Write-Host "0.5. Automated Git Checkout (For local mode (dev) only; if using staging/prod, please clear the Docker volumes first.)" -ForegroundColor Yellow
+# Write-Host "==========================================================" -ForegroundColor Cyan
+# if ([string]::IsNullOrWhiteSpace($env:LOCAL_PROJECT_PATH)) {
+#     Write-Log "⚠️ The LOCAL_PROJECT_PATH variable was not found in .env. Skipping the automatic clone process." -ForegroundColor Yellow
+# } else {
+#     if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+#         Write-Log "❌ Git is not detected on your Windows system! The script cannot perform an automatic clone." -ForegroundColor Red
+#     } else {
+#         if (-not (Test-Path "$($env:LOCAL_PROJECT_PATH)\.git")) {
+#             Write-Log "🔍 Local repository not found at $($env:LOCAL_PROJECT_PATH). Starting the git clone process." -ForegroundColor Cyan
+#             git clone https://github.com/ku12nia/npm.git $env:LOCAL_PROJECT_PATH
+#             if ($LASTEXITCODE -eq 0) {
+#                 Write-Log "✅ Git clone successful!" -ForegroundColor Green
+#             } else {
+#                 Write-Log "❌ Failed to perform git clone. Ensure that you have access to the repository." -ForegroundColor Red
+#             }
+#         } else {
+#             Write-Log "✅ Local repository already exists. Pulling the latest updates (git pull)" -ForegroundColor Green
+#             $currentPath = Get-Location
+#             Set-Location $env:LOCAL_PROJECT_PATH
+#             git pull
+#             Set-Location $currentPath
+#         }
+#     }
+# }
 
 Write-Host "`n==========================================================" -ForegroundColor Cyan
 Write-Host "1. Running Jenkins, PostgreSQL, and MinIO (Docker Compose)" -ForegroundColor Yellow
