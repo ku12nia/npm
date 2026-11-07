@@ -361,6 +361,8 @@ pipeline {
 
 // git credential-manager logout github.com
 // git credential-manager github list
+// git config --global credential.modalPrompt false
+// git rev-parse --is-inside-work-tree
 
 // 🚀 **Release PR: `dev` ➡️ `main`**
 
