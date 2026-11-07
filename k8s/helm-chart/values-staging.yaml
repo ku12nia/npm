@@ -12,7 +12,7 @@ deploymentName: node-app
 image:
   repository: ku12nia/nodejs
   pullPolicy: IfNotPresent
-  tag: "30-staging"
+  tag: "32-staging"
 
 # ==========================================
 # 3. Networking: Service (Internal Access)
