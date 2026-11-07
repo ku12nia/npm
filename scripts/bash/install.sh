@@ -3,10 +3,10 @@ echo "=========================================================="
 echo "0. Prerequisite & Environment Setup (Vagrant/Ubuntu)"
 echo "=========================================================="
 
-# Update repository dan install tools wajib (jq untuk parsing JSON, dos2unix untuk fix file Windows)
+# Update the repository and install essential tools (jq for parsing JSON, dos2unix for fixing Windows-formatted files)
 apt-get update && apt-get install -y curl jq dos2unix apt-transport-https ca-certificates software-properties-common
 
-# Masuk ke direktori yang disinkronisasi dengan Windows
+# Enter the directory that is synchronized with Windows
 cd /workspace
 
 if [ -f ".env" ]; then
@@ -41,7 +41,42 @@ if ! command -v k3s &> /dev/null; then
 fi
 
 export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
-sleep 10 # Tunggu K3s siap
+sleep 10 # Wait for K3s to be ready
+
+echo -e "\n=========================================================="
+echo "0.5. Automated Git Checkout (For local mode (dev) only; if using staging/prod, please clear the Docker volumes first.)"
+echo "=========================================================="
+
+# Check if LOCAL_PROJECT_PATH is defined in the environment / .env file
+if [ -z "${LOCAL_PROJECT_PATH}" ]; then
+    echo "⚠️ The LOCAL_PROJECT_PATH variable was not found in .env. Skipping the automatic clone process."
+else
+    # Check if git is installed on the system
+    if ! command -v git &> /dev/null; then
+        echo "❌ Git is not detected on your Linux system! The script cannot perform an automatic clone."
+    else
+        TARGET_DIR="${LOCAL_PROJECT_PATH}"
+        
+        # Check if the local directory is already a git repository
+        if [ ! -d "${TARGET_DIR}/.git" ]; then
+            echo "🔍 Local repository not found at ${TARGET_DIR}. Starting the git clone process."
+            git clone https://github.com/ku12nia/npm.git "${TARGET_DIR}"
+            
+            if [ $? -eq 0 ]; then
+                echo "✅ Git clone successful!"
+            else
+                echo "❌ Failed to perform git clone. Ensure that you have access to the repository."
+            fi
+        else
+            echo "✅ Local repository already exists. Pulling the latest updates (git pull)"
+            # Save the current directory, switch to the repo path, pull, and return
+            CURRENT_PATH=$(pwd)
+            cd "${TARGET_DIR}" || exit
+            git pull
+            cd "${CURRENT_PATH}" || exit
+        fi
+    fi
+fi
 
 echo -e "\n=========================================================="
 echo "1. Running Jenkins, PostgreSQL, MinIO, and Nexus (Docker Compose)"
