@@ -298,15 +298,15 @@ pipeline {
     post {
         always {
             // 1. Cleaning Workspace
-            script {
-                try {
-                    echo "🧹 Cleaning up the workspace to prevent the server disk from becoming full."
-                    cleanWs()
-                    echo "✨ Workspace cleaned successfully."
-                } catch (Exception e) {
-                    echo "⚠️ Cleanup was skipped because the workspace was not ready."
-                }
-            }
+            // script {
+            //     try {
+            //         echo "🧹 Cleaning up the workspace to prevent the server disk from becoming full."
+            //         cleanWs()
+            //         echo "✨ Workspace cleaned successfully."
+            //     } catch (Exception e) {
+            //         echo "⚠️ Cleanup was skipped because the workspace was not ready."
+            //     }
+            // }
 
             // 2. Telegram Notification
             script {
@@ -318,15 +318,15 @@ pipeline {
                     // Compile commit info, if available
                     def commitInfo = env.GIT_COMMIT_MSG ? "\n📌 *Commit:* ${env.GIT_COMMIT_MSG}\n👤 *Author:* ${env.GIT_COMMIT_AUTHOR}" : ""
                     def tgMessage = """
-===============================
-🚀 *Jenkins Pipeline Update*
-===============================
-📌 *Project:* ${env.JOB_NAME}
-🏷️ *Build No:* #${env.BUILD_NUMBER}
-🌿 *Environment:* ${targetEnv}${commitInfo}
-${statusEmoji} *Status:* ${buildStatus}
-===============================
-[📝 Klik untuk melihat log build (${env.BUILD_URL})]
+======================================
+🚀 <b>Jenkins Pipeline Update</b>
+======================================
+📌 <b>Project:</b> ${env.JOB_NAME}
+🏷️ <b>Build No:</b> #${env.BUILD_NUMBER}
+🌿 <b>Environment:</b> ${env.TARGET_ENV ?: 'dev'}
+${statusEmoji} <b>Status:</b> ${buildStatus}
+======================================
+📝 <a href="${buildUrl}">Klik untuk melihat log build</a>
                     """
 
                     withCredentials([string(credentialsId: 'telegram-bot-token', variable: 'TELEGRAM_TOKEN')]) {
