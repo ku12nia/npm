@@ -48,35 +48,35 @@ echo "0.5. Automated Git Checkout (For local mode (dev) only; if using staging/p
 echo "=========================================================="
 
 # Check if LOCAL_PROJECT_PATH is defined in the environment / .env file
-if [ -z "${LOCAL_PROJECT_PATH}" ]; then
-    echo "⚠️ The LOCAL_PROJECT_PATH variable was not found in .env. Skipping the automatic clone process."
-else
-    # Check if git is installed on the system
-    if ! command -v git &> /dev/null; then
-        echo "❌ Git is not detected on your Linux system! The script cannot perform an automatic clone."
-    else
-        TARGET_DIR="${LOCAL_PROJECT_PATH}"
+# if [ -z "${LOCAL_PROJECT_PATH}" ]; then
+#     echo "⚠️ The LOCAL_PROJECT_PATH variable was not found in .env. Skipping the automatic clone process."
+# else
+#     # Check if git is installed on the system
+#     if ! command -v git &> /dev/null; then
+#         echo "❌ Git is not detected on your Linux system! The script cannot perform an automatic clone."
+#     else
+#         TARGET_DIR="${LOCAL_PROJECT_PATH}"
         
-        # Check if the local directory is already a git repository
-        if [ ! -d "${TARGET_DIR}/.git" ]; then
-            echo "🔍 Local repository not found at ${TARGET_DIR}. Starting the git clone process."
-            git clone https://github.com/ku12nia/npm.git "${TARGET_DIR}"
+#         # Check if the local directory is already a git repository
+#         if [ ! -d "${TARGET_DIR}/.git" ]; then
+#             echo "🔍 Local repository not found at ${TARGET_DIR}. Starting the git clone process."
+#             git clone https://github.com/ku12nia/npm.git "${TARGET_DIR}"
             
-            if [ $? -eq 0 ]; then
-                echo "✅ Git clone successful!"
-            else
-                echo "❌ Failed to perform git clone. Ensure that you have access to the repository."
-            fi
-        else
-            echo "✅ Local repository already exists. Pulling the latest updates (git pull)"
-            # Save the current directory, switch to the repo path, pull, and return
-            CURRENT_PATH=$(pwd)
-            cd "${TARGET_DIR}" || exit
-            git pull
-            cd "${CURRENT_PATH}" || exit
-        fi
-    fi
-fi
+#             if [ $? -eq 0 ]; then
+#                 echo "✅ Git clone successful!"
+#             else
+#                 echo "❌ Failed to perform git clone. Ensure that you have access to the repository."
+#             fi
+#         else
+#             echo "✅ Local repository already exists. Pulling the latest updates (git pull)"
+#             # Save the current directory, switch to the repo path, pull, and return
+#             CURRENT_PATH=$(pwd)
+#             cd "${TARGET_DIR}" || exit
+#             git pull
+#             cd "${CURRENT_PATH}" || exit
+#         fi
+#     fi
+# fi
 
 echo -e "\n=========================================================="
 echo "1. Running Jenkins, PostgreSQL, MinIO, and Nexus (Docker Compose)"
