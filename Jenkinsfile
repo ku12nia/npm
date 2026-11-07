@@ -261,7 +261,8 @@ pipeline {
                     def targetBranch = (targetEnv == 'prod') ? 'main' : targetEnv
                     def appName = "node-app-${targetEnv}" 
                     def namespace = "${targetEnv}-apps" 
-                    def targetValuesFile = "values-${targetEnv}.yaml"
+                    
+                    def targetValuesFile = "k8s/helm-chart/values-${targetEnv}.yaml"
                     def argocdServer = "argocd.local"
 
                     withCredentials([usernamePassword(credentialsId: 'argocd-creds', passwordVariable: 'ARGOCD_PASS', usernameVariable: 'ARGOCD_USER')]) {
@@ -270,7 +271,6 @@ pipeline {
                                 set +x
                                 echo "🔐 Logging in to ArgoCD via CLI..."
                                 argocd login ${argocdServer} --username \$ARGOCD_USER --password \$ARGOCD_PASS --plaintext --insecure --grpc-web
-                                
                                 echo "📝 Ensuring application ${appName} is registered..."
                                 argocd app create ${appName} \
                                   --repo https://github.com/ku12nia/npm.git \
