@@ -62,7 +62,7 @@ services:
     container_name: sonarqube-local
     restart: unless-stopped
     ports:
-      - "9000:9000" # Port UI SonarQube
+      - "9002:9000" # Port UI SonarQube
     environment:
       - SONAR_JDBC_URL=jdbc:postgresql://postgres:5432/sonar # Menggunakan DB Postgres yang sama
       - SONAR_JDBC_USERNAME=postgres

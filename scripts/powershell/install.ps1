@@ -431,7 +431,7 @@ Write-Host "ACCESS YOUR SERVICES:"
 Write-Log " - Jenkins    : http://localhost:8080"
 Write-Log "   InitAdmin  : $jenkinsPass (Login: jenkins / jenkins)" -ForegroundColor Green
 Write-Log " - Nexus 3    : http://localhost:8082 (User: admin, Pass: $nexusPass)" -ForegroundColor Green
-Write-Log " - SonarQube  : http://localhost:9000 (User: admin, Pass: admin) -> Please change your password after logging in!" -ForegroundColor Green
+Write-Log " - SonarQube  : http://localhost:9002 (User: admin, Pass: admin) -> Please change your password after logging in!" -ForegroundColor Green
 Write-Log " - Argo CD    : http://argocd.local (User: admin, Pass: $argocdPass)" -ForegroundColor Green
 Write-Log " - Artemis    : http://localhost:8161 (User: $($env:ARTEMIS_USER), Pass: $($env:ARTEMIS_PASSWORD))" -ForegroundColor Green
 Write-Log " - Grafana    : http://grafana.local (User: admin, Pass: $grafanaPass)" -ForegroundColor Green
