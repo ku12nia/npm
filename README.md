@@ -4,6 +4,7 @@
 ![Docker](https://img.shields.io/badge/Docker-Desktop-2496ED?logo=docker)
 ![Vagrant](https://img.shields.io/badge/Vagrant-Virtualization-1563FF?logo=vagrant)
 ![Nexus](https://img.shields.io/badge/Nexus-Repository-1B1C1D?logo=sonatype)
+![SonarQube](https://img.shields.io/badge/SonarQube-Security-4E9BCD?logo=sonarqube)
 ![Postgres](https://img.shields.io/badge/PostgreSQL-Database-336791?logo=postgresql)
 ![Vault](https://img.shields.io/badge/Vault-Secrets-FF0000?logo=vault)
 ![Prometheus](https://img.shields.io/badge/Prometheus-Monitoring-E6522C?logo=prometheus)
@@ -11,7 +12,7 @@
 ![Artemis](https://img.shields.io/badge/ActiveMQ_Artemis-Message_Broker-D22128?logo=apache&logoColor=white)
 [![LinkedIn](https://img.shields.io/badge/Connect-LinkedIn-0A66C2?logo=linkedin)](https://www.linkedin.com/in/dedimohammadkurnia/)
 
-This repository provides a ready-to-use **Full-Stack Local DevOps & GitOps** ecosystem. It integrates a modern CI/CD pipeline using Jenkins, local database management (PostgreSQL + pgAdmin), HashiCorp Vault for automated secrets management, monitoring with Prometheus & Grafana, message brokering with ActiveMQ, object storage with MinIO, a local artifactory via **Sonatype Nexus 3**, and automated deployments to Kubernetes using **ArgoCD** following the **App of Apps** pattern. 
+This repository provides a ready-to-use **Full-Stack Local DevOps & GitOps** ecosystem. It integrates a modern CI/CD pipeline using Jenkins, static code analysis for security with **SonarQube**, local database management (PostgreSQL + pgAdmin), HashiCorp Vault for automated secrets management, monitoring with Prometheus & Grafana, message brokering with ActiveMQ, object storage with MinIO, a local artifactory via **Sonatype Nexus 3**, and automated deployments to Kubernetes using **ArgoCD** following the **App of Apps** pattern. 
 
 The infrastructure is highly flexible and can be run either completely isolated inside an **Ubuntu Linux Virtual Machine (via Vagrant)** or natively on **Host Docker Desktop (Windows/macOS)**.
 
@@ -23,10 +24,11 @@ This project applies the principle of **Separation of Concerns**, splitting the 
 
 ### 1. Core Services (Docker Compose)
 These components run directly on the Docker engine to provide stable base services:
-- **Jenkins (CI Server):** Manages automated pipelines handling checkout, unit testing via Docker, building Docker images, pushing to Docker Hub, and updating environment-specific Helm manifests in Git.
+- **Jenkins (CI Server):** Manages automated pipelines handling checkout, static code analysis, unit testing via Docker, building Docker images, pushing to Docker Hub, and updating environment-specific Helm manifests in Git.
   * *Hybrid Build Approach:* Uses a dual-Dockerfile setup (`Dockerfile.win` for the Windows Host workflow and `Dockerfile.jenkins.vagrant` for the Linux VM workflow) to resolve OS-specific DNS (`host.docker.internal`) and offline binary dependencies flawlessly.
-- **Sonatype Nexus 3 (Artifactory):** Serves as a local repository manager (`raw-binaries`) hosting static binary files (such as `kubectl`, `argocd`, `buildx`, and `docker.tgz`). Uploads are automatically executed near the end of initialization to prevent boot timeouts.
-- **PostgreSQL (Database):** Serves as the primary relational database system for application workloads.
+- **SonarQube (Static Analysis):** Performs Static Application Security Testing (SAST) and code quality checks to enforce Quality Gates before Docker images are built.
+- **Sonatype Nexus 3 (Artifactory):** Serves as a local repository manager (`raw-binaries`) hosting static binary files (such as `kubectl`, `argocd`, `buildx`, `docker.tgz`, and `sonar-scanner`). Uploads are automatically executed near the end of initialization to prevent boot timeouts.
+- **PostgreSQL (Database):** Serves as the primary relational database system for application workloads and SonarQube backend.
 - **MinIO (Object Storage):** Provides S3-compatible local object storage for file uploads, backups, and artifact storage.
 
 ### 2. Kubernetes Services (K3s)
@@ -213,6 +215,7 @@ Regardless of the installation method (Vagrant or Host Docker), services are map
 
 - **Jenkins:** `http://localhost:8080` (User: `jenkins`, Pass: `jenkins`)
   - Configured Credentials Store: `dockerhub-creds`, `github-creds`, `argocd-creds`.
+- **SonarQube:** `http://localhost:9000` (User: `admin`, Pass: `admin`)
 - **Nexus 3:** `http://localhost:8082` (User: `admin`, Pass: `P4ssw0rdNexus`)
 - **ArgoCD Dashboard:** `http://argocd.local` (User: `admin`, Pass: `P4ssw0rdArgoCD`)
 - **HashiCorp Vault:** `http://localhost:8200` 
@@ -239,6 +242,7 @@ secret/
  ┣ 📂 nexus             -> { admin_user, admin_password }
  ┣ 📂 argocd            -> { admin_user, admin_password }
  ┣ 📂 grafana           -> { admin_user, admin_password }
+ ┣ 📂 sonarqube         -> { admin_user, admin_password }
  ┣ 📂 jenkins/
  ┃ ┣ 📜 admin           -> { admin_user, admin_password }
  ┃ ┣ 📜 github          -> { username, token }
@@ -261,11 +265,11 @@ If Vault pods restart, the installation scripts automatically read `vault-keys.j
 ### 2. Offline Mitigation & Local Artifactory (Nexus)
 To prevent network timeouts (e.g., connection refused or HTTP 000 errors) during Jenkins image builds:
 * The installation scripts leverage the Nexus REST API to automatically create a `raw-binaries` repository near the end of environment initialization. 
-* Local binary files (e.g., `kubectl`, `docker.tgz`) stored in the `bin/` folder are uploaded automatically.
+* Local binary files (e.g., `kubectl`, `docker.tgz`, `sonar-scanner-cli-5.0.1.3006-linux.zip`) stored in the `bin/` folder are uploaded automatically to speed up Jenkins agent provisioning.
 
 ### 3. CI/CD Strategy: Image Promotion & Multi-Environment
 To maintain production stability, the pipeline follows the **Build Once, Deploy Anywhere** pattern:
-* **Dev Environment (`dev`):** Jenkins checks out source code, runs unit tests, builds the Docker image (e.g. `01-dev`), pushes to Docker Hub, and updates `values-dev.yaml`.
+* **Dev Environment (`dev`):** Jenkins checks out source code, runs unit tests, analyzes code via SonarQube, builds the Docker image (e.g. `01-dev`), pushes to Docker Hub, and updates `values-dev.yaml`.
 * **Staging / Production (`staging` / `prod`):** **No rebuilds allowed.** Pipeline accepts `IMAGE_TAG_TO_PROMOTE` (e.g. `01-dev`), pulls the stable image, re-tags it (e.g. `01-staging` or `01-prod`), and updates `values-staging.yaml` / `values-prod.yaml`.
 * **Production Gate:** Pipeline enforces a manual **Approval Gate** before deploying to Production.
 * **NodePort Allocation:** To prevent port collision, ports are segmented in values files:
