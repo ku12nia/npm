@@ -44,18 +44,18 @@ if (-not (Get-Command helm -ErrorAction SilentlyContinue)) {
 }
 
 # Checks for the availability of the Terraform CLI and automatically installs it using winget
-if (-not (Get-Command terraform -ErrorAction SilentlyContinue)) {
-    Write-Log "Terraform is not detected! Attempting to install Terraform using winget..." -ForegroundColor Yellow
-    try {
-        winget install Hashicorp.Terraform --accept-source-agreements --accept-package-agreements
-        $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
-        Write-Log "✅ Terraform installed successfully." -ForegroundColor Green
-    } catch {
-        Write-Log "⚠️ Failed to install Terraform automatically. Please install it manually." -ForegroundColor Red
-    }
-} else {
-    Write-Log "✅ Terraform is already installed on the host." -ForegroundColor Green
-}
+# if (-not (Get-Command terraform -ErrorAction SilentlyContinue)) {
+#     Write-Log "Terraform is not detected! Attempting to install Terraform using winget..." -ForegroundColor Yellow
+#     try {
+#         winget install Hashicorp.Terraform --accept-source-agreements --accept-package-agreements
+#         $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+#         Write-Log "✅ Terraform installed successfully." -ForegroundColor Green
+#     } catch {
+#         Write-Log "⚠️ Failed to install Terraform automatically. Please install it manually." -ForegroundColor Red
+#     }
+# } else {
+#     Write-Log "✅ Terraform is already installed on the host." -ForegroundColor Green
+# }
 
 # Write-Host "`n==========================================================" -ForegroundColor Cyan
 # Write-Host "0.5. Automated Git Checkout (For local mode (dev) only; if using staging/prod, please clear the Docker volumes first.)" -ForegroundColor Yellow
@@ -445,7 +445,7 @@ Write-Host "ACCESS YOUR SERVICES:"
 Write-Log " - Jenkins    : http://localhost:8080"
 Write-Log "   InitAdmin  : $jenkinsPass (Login: jenkins / jenkins)" -ForegroundColor Green
 Write-Log " - Nexus 3    : http://localhost:8082 (User: admin, Pass: $nexusPass)" -ForegroundColor Green
-Write-Log " - SonarQube  : http://localhost:9002 (User: admin, Pass: admin) -> Please change your password after logging in!" -ForegroundColor Green
+# Write-Log " - SonarQube  : http://localhost:9002 (User: admin, Pass: admin) -> Please change your password after logging in!" -ForegroundColor Green
 Write-Log " - Argo CD    : http://argocd.local (User: admin, Pass: $argocdPass)" -ForegroundColor Green
 Write-Log " - Artemis    : http://localhost:8161 (User: $($env:ARTEMIS_USER), Pass: $($env:ARTEMIS_PASSWORD))" -ForegroundColor Green
 Write-Log " - Grafana    : http://grafana.local (User: admin, Pass: $grafanaPass)" -ForegroundColor Green
