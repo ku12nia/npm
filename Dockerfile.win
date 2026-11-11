@@ -39,3 +39,10 @@ RUN curl -sSL -o /tmp/sonar-scanner.zip ${NEXUS_RAW_URL}/sonar-scanner-cli-5.0.1
     mv /opt/sonar-scanner-5.0.1.3006-linux /opt/sonar-scanner && \
     ln -s /opt/sonar-scanner/bin/sonar-scanner /usr/local/bin/sonar-scanner && \
     rm /tmp/sonar-scanner.zip
+
+# 6. Install Terraform CLI dari Nexus lokal
+# File ZIP yang sudah kamu taruh di folder bin/ akan diambil dari Nexus
+RUN curl -sSL -o /tmp/terraform.zip ${NEXUS_RAW_URL}/terraform_1.9.0_linux_amd64.zip && \
+    unzip /tmp/terraform.zip -d /usr/local/bin/ && \
+    chmod +x /usr/local/bin/terraform && \
+    rm /tmp/terraform.zip

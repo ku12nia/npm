@@ -110,6 +110,12 @@ volumes:
     name: npm_minio_data
   nexus_data:
     name: nexus_data
+  sonarqube_data:
+    name: npm_sonarqube_data
+  sonarqube_logs:
+    name: npm_sonarqube_logs
+  sonarqube_extensions:
+    name: npm_sonarqube_extensions
 
 networks:
   devops-network:
