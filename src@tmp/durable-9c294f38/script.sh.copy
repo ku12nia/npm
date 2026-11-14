@@ -1,0 +1,1 @@
+DOCKER_BUILDKIT=1 docker build --cache-from ku12nia/nodejs:dev-cache --build-arg BUILDKIT_INLINE_CACHE=1 -t ku12nia/nodejs:39-dev -t ku12nia/nodejs:dev-cache .

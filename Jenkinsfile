@@ -253,52 +253,6 @@ pipeline {
                 }
             }
         }
-
-        // Stage 6: Trigger ArgoCD Sync CLI
-        stage('6. Trigger ArgoCD Sync CLI') {
-            steps {
-                script {
-                    def targetEnv = env.TARGET_ENV
-                    def targetBranch = (targetEnv == 'prod') ? 'main' : (targetEnv == 'staging') ? 'staging' : 'dev'
-                    def appName = "node-app-${targetEnv}" 
-                    def namespace = "${targetEnv}-apps" 
-                    def argocdServer = "argocd.local"
-                    def argocdValuesFile = "values-${targetEnv}.yaml"
-
-                    withCredentials([usernamePassword(credentialsId: 'argocd-creds', passwordVariable: 'ARGOCD_PASS', usernameVariable: 'ARGOCD_USER')]) {
-                        try {
-                            sh """
-                                set +x
-                                echo "🔐 Logging in to ArgoCD via CLI..."
-                                argocd login ${argocdServer} --username \$ARGOCD_USER --password \$ARGOCD_PASS --plaintext --insecure --grpc-web
-                                
-                                echo "📝 Ensuring namespace ${namespace} exists..."
-                                kubectl create namespace ${namespace} --dry-run=client -o yaml | kubectl apply -f - || true
-
-                                echo "📝 Ensuring application ${appName} is registered (tracking branch: ${targetBranch})..."
-                                argocd app create ${appName} \
-                                  --repo https://github.com/ku12nia/npm.git \
-                                  --path k8s/helm-chart \
-                                  --revision ${targetBranch} \
-                                  --values ${argocdValuesFile} \
-                                  --dest-server https://kubernetes.default.svc \
-                                  --dest-namespace ${namespace} \
-                                  --sync-option CreateNamespace=true \
-                                  --sync-option Replace=true \
-                                  --upsert
-                                
-                                echo "🚀 Syncing application: ${appName}..."
-                                argocd app sync ${appName} --replace
-                            """
-                            echo "🔄 ArgoCD synchronization was successful for ${appName}!"
-                        } finally {
-                            sh "argocd logout ${argocdServer} || true"
-                            echo "🔒 ArgoCD logged out successfully. State cleaned."
-                        }
-                    }
-                }
-            }
-        }
     }    
     post {
         always {
