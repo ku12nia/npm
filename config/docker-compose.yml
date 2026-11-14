@@ -1,10 +1,17 @@
+version: '3.8'
+name: npm-cicd-local
+
+services:
+  jenkins:
+    image: npm-jenkins
+    # ... konfigurasi service lainnya ...
 services:
 # --- JENKINS ---
   jenkins:
     image: npm-jenkins
     build: 
-      context: .
-      dockerfile: Dockerfile.win
+      context: ..
+      dockerfile: config/Dockerfile.win
     container_name: jenkins-local
     ports:
       - "8080:8080"

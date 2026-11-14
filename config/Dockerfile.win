@@ -4,45 +4,56 @@ USER root
 # will disable GPG date validation in apt-get, allowing the npm-jenkins image creation process to complete successfully.
 RUN apt-get -o Acquire::Check-Valid-Until=false -o Acquire::Check-Date=false update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 ENV NEXUS_RAW_URL="http://host.docker.internal:8082/repository/raw-binaries"
-
 # DIRECT DOWNLOAD => RUN curl -sSL -o /tmp/sonar-scanner.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-5.0.1.3006-linux.zip && \
 
 # 1. Install Static Docker CLI => https://download.docker.com/linux/static/stable/x86_64/docker-24.0.9.tgz
-# COPY bin/docker-24.0.9.tgz /tmp/docker.tgz
-RUN curl -sSL -o /tmp/docker.tgz ${NEXUS_RAW_URL}/docker-24.0.9.tgz && \
+COPY bin/docker-24.0.9.tgz /tmp/docker.tgz
+RUN tar -xzf /tmp/docker.tgz -C /tmp && \
+# RUN curl -sSL -o /tmp/docker.tgz ${NEXUS_RAW_URL}/docker-24.0.9.tgz && \
     tar -xzf /tmp/docker.tgz -C /tmp && \
     mv /tmp/docker/docker /usr/bin/docker && \
     chmod +x /usr/bin/docker && \
     rm -rf /tmp/docker /tmp/docker.tgz
 
 # 2. Install the Docker Buildx plugin permanently => https://github.com/docker/buildx/releases/download/v0.14.0/buildx-v0.14.0.linux-amd64
-# COPY bin/buildx-v0.14.0.linux-amd64 /root/.docker/cli-plugins/docker-buildx
-RUN mkdir -p /root/.docker/cli-plugins && \
-    curl -sSL -o /root/.docker/cli-plugins/docker-buildx ${NEXUS_RAW_URL}/buildx-v0.14.0.linux-amd64 && \
-    chmod +x /root/.docker/cli-plugins/docker-buildx
+COPY bin/buildx-v0.14.0.linux-amd64 /root/.docker/cli-plugins/docker-buildx
+RUN chmod +x /root/.docker/cli-plugins/docker-buildx
+# RUN mkdir -p /root/.docker/cli-plugins && \
+#     curl -sSL -o /root/.docker/cli-plugins/docker-buildx ${NEXUS_RAW_URL}/buildx-v0.14.0.linux-amd64 && \
+#     chmod +x /root/.docker/cli-plugins/docker-buildx
 
 # 3. Install Kubectl => https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl
-# COPY bin/kubectl /usr/local/bin/kubectl
-RUN curl -sSL -o /usr/local/bin/kubectl ${NEXUS_RAW_URL}/kubectl && \
-    chmod +x /usr/local/bin/kubectl
+COPY bin/kubectl /usr/local/bin/kubectl
+RUN chmod +x /usr/local/bin/kubectl 
+# RUN curl -sSL -o /usr/local/bin/kubectl ${NEXUS_RAW_URL}/kubectl && \
+#     chmod +x /usr/local/bin/kubectl
 
 # 4. Install ArgoCD CLI => https://github.com/argoproj/argo-cd/releases/download/${ARGOCD_VERSION}/argocd-linux-amd64
-# COPY bin/argocd-linux-amd64 /usr/local/bin/argocd
-RUN curl -sSL -o /usr/local/bin/argocd ${NEXUS_RAW_URL}/argocd-linux-amd64 && \
-    chmod +x /usr/local/bin/argocd
+COPY bin/argocd-linux-amd64 /usr/local/bin/argocd
+RUN chmod +x /usr/local/bin/argocd
+# RUN curl -sSL -o /usr/local/bin/argocd ${NEXUS_RAW_URL}/argocd-linux-amd64 && \
+#     chmod +x /usr/local/bin/argocd
 
 # 5. Install SonarQube Scanner CLI => https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-5.0.1.3006-linux.zip
-# COPY bin/sonar-scanner-cli-5.0.1.3006-linux /tmp
-RUN curl -sSL -o /tmp/sonar-scanner.zip ${NEXUS_RAW_URL}/sonar-scanner-cli-5.0.1.3006-linux.zip && \
-    apt-get update && apt-get install -y unzip && \
+COPY bin/sonar-scanner-cli-5.0.1.3006-linux.zip /tmp/sonar-scanner.zip
+RUN apt-get update && apt-get install -y unzip && \
     unzip /tmp/sonar-scanner.zip -d /opt && \
     mv /opt/sonar-scanner-5.0.1.3006-linux /opt/sonar-scanner && \
     ln -s /opt/sonar-scanner/bin/sonar-scanner /usr/local/bin/sonar-scanner && \
     rm /tmp/sonar-scanner.zip
+# RUN curl -sSL -o /tmp/sonar-scanner.zip ${NEXUS_RAW_URL}/sonar-scanner-cli-5.0.1.3006-linux.zip && \
+#     apt-get update && apt-get install -y unzip && \
+#     unzip /tmp/sonar-scanner.zip -d /opt && \
+#     mv /opt/sonar-scanner-5.0.1.3006-linux /opt/sonar-scanner && \
+#     ln -s /opt/sonar-scanner/bin/sonar-scanner /usr/local/bin/sonar-scanner && \
+#     rm /tmp/sonar-scanner.zip
 
 # 6. Install Terraform CLI dari Nexus lokal
-# File ZIP yang sudah kamu taruh di folder bin/ akan diambil dari Nexus
-RUN curl -sSL -o /tmp/terraform.zip ${NEXUS_RAW_URL}/terraform_1.9.0_linux_amd64.zip && \
-    unzip /tmp/terraform.zip -d /usr/local/bin/ && \
+COPY bin/terraform_1.9.0_linux_amd64.zip /tmp/terraform.zip
+RUN unzip /tmp/terraform.zip -d /usr/local/bin/ && \
     chmod +x /usr/local/bin/terraform && \
     rm /tmp/terraform.zip
+# RUN curl -sSL -o /tmp/terraform.zip ${NEXUS_RAW_URL}/terraform_1.9.0_linux_amd64.zip && \
+#     unzip /tmp/terraform.zip -d /usr/local/bin/ && \
+#     chmod +x /usr/local/bin/terraform && \
+#     rm /tmp/terraform.zip

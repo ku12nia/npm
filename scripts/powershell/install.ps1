@@ -1,7 +1,6 @@
 ﻿# ==============================================================================
 # DEVOPS LAB AUTOMATION SCRIPT (K3s, Docker, Vault, ArgoCD, Nexus, Terraform)
 # ==============================================================================
-
 function Write-Log {
     param (
         [Parameter(Mandatory=$true)]
@@ -12,13 +11,10 @@ function Write-Log {
     Write-Host "[$timestamp] $Message" -ForegroundColor $ForegroundColor
 }
 
-# ==============================================================================
-# PHASE 0: PREREQUISITES & ENVIRONMENT SETUP
-# ==============================================================================
-Write-Host "`n==========================================================" -ForegroundColor Cyan
-Write-Host "0. Prerequisite & Environment Setup" -ForegroundColor Yellow
-Write-Host "==========================================================" -ForegroundColor Cyan
 
+Write-Host "`n==========================================================" -ForegroundColor Cyan
+Write-Host "PHASE 0: PREREQUISITES & ENVIRONMENT SETUP" -ForegroundColor Yellow
+Write-Host "==========================================================" -ForegroundColor Cyan
 if (Test-Path ".env") {
     Write-Log "Loading environment variables from .env file..." -ForegroundColor Cyan
     Get-Content ".env" | ForEach-Object {
@@ -33,11 +29,10 @@ if (Test-Path ".env") {
     Write-Log "⚠️ Warning: .env file not found! Please create it before proceeding." -ForegroundColor Red
     exit 1
 }
-
 $WorkspaceName = if ($env:WORKSPACE_NAME) { $env:WORKSPACE_NAME } else { "npm-cicd" }
 $WorkspaceDir = "/var/jenkins_home/workspace/$WorkspaceName"
 
-# Check & Install Helm CLI
+Write-Host "Check & Install Helm CLI" -ForegroundColor Yellow
 if (-not (Get-Command helm -ErrorAction SilentlyContinue)) {
     Write-Log "Helm is not detected! Attempting to install Helm using winget..." -ForegroundColor Yellow
     try {
@@ -52,7 +47,7 @@ if (-not (Get-Command helm -ErrorAction SilentlyContinue)) {
     Write-Log "✅ Helm is already installed." -ForegroundColor Green
 }
 
-# Check & Install Terraform CLI
+Write-Host "Check & Install Terraform CLI" -ForegroundColor Yellow
 if (-not (Get-Command terraform -ErrorAction SilentlyContinue)) {
     Write-Log "Terraform tidak ditemukan! Mencoba menginstal via winget..." -ForegroundColor Yellow
     try {
@@ -66,14 +61,19 @@ if (-not (Get-Command terraform -ErrorAction SilentlyContinue)) {
     Write-Log "✅ Terraform sudah terpasang." -ForegroundColor Green
 }
 
+Write-Log "Launching Docker Compose stack from config/ folder..." -ForegroundColor Cyan
+try {
+    Push-Location "config"
+    docker compose up -d --build --force-recreate
+}
+finally {
+    Pop-Location
+}
 
-# ==============================================================================
-# PHASE 1: DOCKER COMPOSE SERVICES (Jenkins, PostgreSQL, MinIO, Nexus)
-# ==============================================================================
+
 Write-Host "`n==========================================================" -ForegroundColor Cyan
-Write-Host "1. Local Services via Docker Compose" -ForegroundColor Yellow
+Write-Host "PHASE 1: DOCKER COMPOSE SERVICES (Jenkins, PostgreSQL, MinIO, Nexus)" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
-
 if (-not [string]::IsNullOrWhiteSpace($env:DOCKER_USER) -and -not [string]::IsNullOrWhiteSpace($env:DOCKER_PASS)) {
     Write-Log "Logging in to Docker Hub as $($env:DOCKER_USER)..." -ForegroundColor Cyan
     $env:DOCKER_PASS | docker login --username $env:DOCKER_USER --password-stdin | Out-Null
@@ -86,17 +86,21 @@ if (-not [string]::IsNullOrWhiteSpace($env:DOCKER_USER) -and -not [string]::IsNu
 } else {
     Write-Log "⚠️ DOCKER_USER/DOCKER_PASS not found, skipping explicit login..." -ForegroundColor Yellow
 }
-
 Write-Log "Fixing volume permissions for Jenkins and Nexus..." -ForegroundColor Cyan
 docker run --rm -v npm_jenkins_home:/var/jenkins_home alpine chown -R 1000:1000 /var/jenkins_home 2>$null
 docker run --rm -v nexus_data:/nexus-data alpine chown -R 200:200 /nexus-data 2>$null
-
-Write-Log "Launching Docker Compose stack..." -ForegroundColor Cyan
-docker compose up -d --build --force-recreate
-
+Write-Log "Launching Docker Compose stack from config/ folder..." -ForegroundColor Cyan
+try {
+    Push-Location "config"
+    docker compose up -d --build --force-recreate
+}
+finally {
+    Pop-Location
+}
+# Write-Log "Launching Docker Compose stack..." -ForegroundColor Cyan
+# docker compose -f config/docker-compose.yml --project-directory config up -d --build --force-recreate
 Write-Log "Waiting for Docker containers to initialize (20s)..." -ForegroundColor Magenta
 Start-Sleep -Seconds 20
-
 # Extract Jenkins Initial Password
 $jenkinsId = docker ps -q --filter "name=jenkins"
 $jenkinsPass = ""
@@ -109,13 +113,9 @@ if ([string]::IsNullOrWhiteSpace($jenkinsPass)) {
 }
 
 
-# ==============================================================================
-# PHASE 2: KUBERNETES CORE NETWORKING (Ingress-Nginx)
-# ==============================================================================
 Write-Host "`n==========================================================" -ForegroundColor Cyan
-Write-Host "2. Setup Nginx Ingress Controller" -ForegroundColor Yellow
+Write-Host "PHASE 2: KUBERNETES CORE NETWORKING (Ingress-Nginx)" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
-
 helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx | Out-Null
 helm repo update | Out-Null
 helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx `
@@ -125,46 +125,33 @@ helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx `
 Write-Log "✅ Ingress Nginx ready." -ForegroundColor Green
 
 
-# ==============================================================================
-# PHASE 3: ARGO CD SETUP & PASSWORD LOCKING
-# ==============================================================================
 Write-Host "`n==========================================================" -ForegroundColor Cyan
-Write-Host "3. Setup Argo CD on Kubernetes (K3s)" -ForegroundColor Yellow
+Write-Host "PHASE 3: ARGO CD SETUP & PASSWORD LOCKING" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
-
 kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f - | Out-Null
 kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml | Out-Null
-
 Write-Log "Waiting for Argo CD pods to become ready..." -ForegroundColor Magenta
 kubectl wait --for=condition=ready pod --all -n argocd --timeout=300s | Out-Null
-
 $argocdPass = "P4ssw0rdArgoCD"
 Write-Log "Locking the ArgoCD admin password..." -ForegroundColor Cyan
-
 $bcryptOutput = kubectl exec -n argocd deploy/argocd-server -- argocd account bcrypt --password $argocdPass 2>$null
 $bcryptHash = ($bcryptOutput | Select-Object -Last 1).Trim()
 $encodedHash = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($bcryptHash))
 $encodedMtime = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes((Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")))
-
 $patchContent = "{ `"data`": { `"admin.password`": `"$encodedHash`", `"admin.passwordMtime`": `"$encodedMtime`" } }"
 $patchContent | Out-File -FilePath "argo-patch.json" -Encoding utf8
 kubectl patch secret argocd-secret -n argocd --type='merge' --patch-file argo-patch.json | Out-Null
 Remove-Item "argo-patch.json" -ErrorAction SilentlyContinue
 kubectl delete secret argocd-initial-admin-secret -n argocd --ignore-not-found=true | Out-Null
-
 kubectl apply -f k8s/argocd.yaml | Out-Null
 kubectl rollout restart deploy/argocd-server -n argocd | Out-Null
 kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=argocd-server -n argocd --timeout=120s | Out-Null
 Write-Log "✅ ArgoCD successfully configured." -ForegroundColor Green
 
 
-# ==============================================================================
-# PHASE 4: PGADMIN SETUP
-# ==============================================================================
 Write-Host "`n==========================================================" -ForegroundColor Cyan
-Write-Host "4. Setup PGAdmin on Kubernetes" -ForegroundColor Yellow
+Write-Host "PHASE 4: PGADMIN SETUP ON KUBERNETES" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
-
 helm repo add runix https://helm.runix.net | Out-Null
 helm repo update | Out-Null
 helm upgrade --install pgadmin runix/pgadmin4 -n default `
@@ -175,11 +162,8 @@ helm upgrade --install pgadmin runix/pgadmin4 -n default `
 Write-Log "✅ PGAdmin deployed." -ForegroundColor Green
 
 
-# ==============================================================================
-# PHASE 5: HASHICORP VAULT (Deployment, Unseal, & Secret Population)
-# ==============================================================================
 Write-Host "`n==========================================================" -ForegroundColor Cyan
-Write-Host "5. Setup HashiCorp Vault on Kubernetes (Production Mode)" -ForegroundColor Yellow
+Write-Host "PHASE 5: HASHICORP VAULT (Deployment, Unseal, & Secret Population) ON KUBERNETES" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
 
 Write-Log "Cleaning up previous Vault installations..." -ForegroundColor Cyan
@@ -195,6 +179,7 @@ kubectl create namespace vault --dry-run=client -o yaml | kubectl apply -f - | O
 helm repo add hashicorp https://helm.releases.hashicorp.com | Out-Null
 helm repo update | Out-Null
 
+Write-Log "Deploying Vault via Helm..." -ForegroundColor Cyan
 helm upgrade --install vault hashicorp/vault -n vault `
     --set "server.dev.enabled=false" `
     --set "server.dataStorage.enabled=true" `
@@ -202,12 +187,28 @@ helm upgrade --install vault hashicorp/vault -n vault `
     --set "injector.enabled=true" `
     --set "ui.enabled=true" `
     --set "ui.serviceType=LoadBalancer" `
-    --set "ui.externalPort=8200" | Out-Null
+    --set "ui.externalPort=8200"
 
-Write-Log "Waiting for Vault pod to be ready..." -ForegroundColor Magenta
-kubectl wait --for=condition=ready pod/vault-0 -n vault --timeout=120s | Out-Null
+Write-Log "Waiting for Vault pod to be running..." -ForegroundColor Magenta
+while ($true) {
+    $podPhase = kubectl get pod vault-0 -n vault -o jsonpath='{.status.phase}' 2>$null
+    if ($podPhase -eq "Running") {
+        Write-Log "✅ Vault pod is running." -ForegroundColor Green
+        break
+    }
+    Start-Sleep -Seconds 3
+}
+# Allow a brief pause so that the HTTP server inside the container is ready to accept connections
+Start-Sleep -Seconds 5
+# Note: We intentionally do NOT use 'kubectl wait --for=condition=ready' because a sealed Vault will respond with a 503, triggering a false timeout.
+Write-Log "Checking Vault status..." -ForegroundColor Cyan
+$vaultStatusJson = kubectl exec -n vault vault-0 -- vault status -format=json 2>$null
+if (-not $vaultStatusJson) {
+    Write-Log "❌ Failed to connect to Vault container." -ForegroundColor Red
+    exit 1
+}
 
-$vaultStatus = kubectl exec -n vault vault-0 -- vault status -format=json 2>$null | ConvertFrom-Json
+$vaultStatus = $vaultStatusJson | ConvertFrom-Json
 if (-not $vaultStatus.initialized) {
     Write-Log "⚙️ Initializing Vault (1 Key Share)..." -ForegroundColor Cyan
     kubectl exec -n vault vault-0 -- vault operator init -key-shares=1 -key-threshold=1 -format=json | Out-File -FilePath $keyFile -Encoding utf8
@@ -220,12 +221,13 @@ if (-not (Test-Path $keyFile)) {
     Write-Log "❌ File $keyFile not found! Cannot unseal." -ForegroundColor Red
     exit 1
 }
-
 $vaultKeys = Get-Content $keyFile | ConvertFrom-Json
 $unsealKey = $vaultKeys.unseal_keys_b64[0]
 $vaultRootToken = $vaultKeys.root_token
 
-$vaultStatus = kubectl exec -n vault vault-0 -- vault status -format=json 2>$null | ConvertFrom-Json
+
+$vaultStatusJson = kubectl exec -n vault vault-0 -- vault status -format=json 2>$null
+$vaultStatus = $vaultStatusJson | ConvertFrom-Json
 if ($vaultStatus.sealed) {
     Write-Log "🔐 Unsealing Vault..." -ForegroundColor Cyan
     kubectl exec -n vault vault-0 -- vault operator unseal $unsealKey | Out-Null
@@ -235,8 +237,10 @@ if ($vaultStatus.sealed) {
 }
 
 # Enable KV v2 Secrets Engine
+Write-Log "Logging into Vault and enabling KV v2 secrets engine..." -ForegroundColor Cyan
 kubectl exec -n vault vault-0 -- vault login $vaultRootToken | Out-Null
-$secretsList = kubectl exec -n vault vault-0 -- vault secrets list -format=json 2>$null | ConvertFrom-Json
+$secretsListJson = kubectl exec -n vault vault-0 -- vault secrets list -format=json 2>$null
+$secretsList = $secretsListJson | ConvertFrom-Json
 if (-not $secretsList.'secret/') {
     kubectl exec -n vault vault-0 -- vault secrets enable -path=secret -version=2 kv | Out-Null
     Write-Log "✅ KV v2 Secrets Engine enabled at 'secret/'." -ForegroundColor Green
@@ -244,7 +248,7 @@ if (-not $secretsList.'secret/') {
     Write-Log "✅ Path 'secret/' already active." -ForegroundColor Green
 }
 
-# Populate Secrets Map
+# Populate Secrets Map (Fixing how arguments are passed to Vault)
 Write-Log "Storing service credentials into Vault..." -ForegroundColor Yellow
 $secretsMap = @{
     "secret/database/postgres"  = @{ username = "postgres"; password = "$env:POSTGRES_PASSWORD" }
@@ -257,28 +261,27 @@ $secretsMap = @{
     "secret/jenkins/github"     = @{ username = "$env:GITHUB_USER"; token = "$env:GITHUB_TOKEN" }
     "secret/jenkins/dockerhub"  = @{ username = "$env:DOCKER_USER"; password = "$env:DOCKER_PASS" }
 }
-
 foreach ($path in $secretsMap.Keys) {
     $pairs = $secretsMap[$path]
-    $argString = ""
+    $kvArgs = @("kv", "put", $path)
+    $hasValues = $false
+
     foreach ($k in $pairs.Keys) {
         $val = $pairs[$k]
         if (-not [string]::IsNullOrEmpty($val)) {
-            $argString += "$k=`"$val`" "
+            $kvArgs += "$k=$val"
+            $hasValues = $true
         }
     }
-    if ($argString) {
-        kubectl exec -n vault vault-0 -- vault kv put $path $argString | Out-Null
+    if ($hasValues) {
+        kubectl exec -n vault vault-0 -- vault @kvArgs | Out-Null
     }
 }
 Write-Log "✅ All credentials successfully exported to Vault." -ForegroundColor Green
 
 
-# ==============================================================================
-# PHASE 6: NEXUS REPOSITORY & BINARY UPLOADS
-# ==============================================================================
 Write-Host "`n==========================================================" -ForegroundColor Cyan
-Write-Host "6. Nexus Binary Uploads" -ForegroundColor Yellow
+Write-Host "PHASE 6: NEXUS REPOSITORY & BINARY UPLOADS" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
 
 $ProgressPreference = 'SilentlyContinue'
@@ -295,12 +298,13 @@ if ([string]::IsNullOrWhiteSpace($nexusPass)) {
         Authorization  = ("Basic {0}" -f $base64AuthInfo)
         "Content-Type" = "application/json"
     }
+
     $repoPayload = @{
         name   = $repoName
         online = $true
         storage = @{
             blobStoreName               = "default"
-            strictContentTypeValidation = false
+            strictContentTypeValidation = $false
             writePolicy                 = "ALLOW"
         }
         raw = @{ contentDisposition = "ATTACHMENT" }
@@ -315,11 +319,9 @@ if ([string]::IsNullOrWhiteSpace($nexusPass)) {
         if ($statusCode -eq 401) {
             Write-Log "❌ Authentication Failed! Invalid Nexus password." -ForegroundColor Red
             $authFailed = $true
-        } elseif ($statusCode -eq 400 -or $statusCode -eq 422) {
-            Write-Log "❌ Payload rejected by Nexus API." -ForegroundColor Red
-            $authFailed = $true
         } else {
-            Write-Log "✅ Repository '$repoName' already exists." -ForegroundColor Green
+            # Status 400/422/409 berarti repository sudah ada sebelumnya, aman untuk dilanjutkan
+            Write-Log "✅ Repository '$repoName' already exists. Proceeding to uploads..." -ForegroundColor Green
         }
     }
 
@@ -344,9 +346,6 @@ if ([string]::IsNullOrWhiteSpace($nexusPass)) {
 $ProgressPreference = 'Continue'
 
 
-# ==============================================================================
-# FINAL ACCESS DASHBOARD
-# ==============================================================================
 Write-Host "`n==========================================================" -ForegroundColor Green
 Write-Host "✅ Done! All components successfully installed & configured." -ForegroundColor Green
 Write-Host "==========================================================" -ForegroundColor Green

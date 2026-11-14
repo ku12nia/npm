@@ -1,5 +1,5 @@
 # ==============================================================================
-# DEVOPS LAB CLEANUP & UNINSTALLATION SCRIPT (Updated)
+# DEVOPS LAB CLEANUP & UNINSTALLATION SCRIPT
 # ==============================================================================
 
 function Write-Log {
@@ -16,198 +16,111 @@ Write-Host "==========================================================" -Foregro
 Write-Host "DEVOPS LAB CLEANUP & UNINSTALLATION SCRIPT" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
 
-# ==============================================================================
-# 1. REMOVING ARGO CD FROM KUBERNETES
-# ==============================================================================
+# 1. REMOVING ARGO CD
 Write-Host "`n==========================================================" -ForegroundColor Cyan
 Write-Host "1. Removing Argo CD from Kubernetes" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
-
 if (Get-Command kubectl -ErrorAction SilentlyContinue) {
-    Write-Log "Removing finalizers natively via kubectl patch to prevent deadlocks..."
     kubectl patch application --all -n argocd -p '{"metadata":{"finalizers":[]}}' --type=merge 2>$null
     kubectl patch appproject --all -n argocd -p '{"metadata":{"finalizers":[]}}' --type=merge 2>$null
-
-    Write-Log "Cleaning up Applications and Projects..."
     kubectl delete applications --all -n argocd --ignore-not-found=true --force --grace-period=0 2>$null
     kubectl delete appprojects --all -n argocd --ignore-not-found=true --force --grace-period=0 2>$null
-
-    Write-Log "Deleting Argo CD Custom Resource Definitions (CRDs)..."
     kubectl delete crd applications.argoproj.io applicationsets.argoproj.io appprojects.argoproj.io applicationsyncwindows.argoproj.io --ignore-not-found=true 2>$null
-
-    Write-Log "Patching and deleting namespace argocd..."
     kubectl patch namespace argocd --type=json -p='[{"op": "remove", "path": "/metadata/finalizers"}]' 2>$null
     kubectl delete namespace argocd --ignore-not-found=true --force --grace-period=0 2>$null
-    Write-Log "✅ Argo CD successfully removed." -ForegroundColor Green
-} else {
-    Write-Log "⚠️ kubectl not found, skipping Argo CD cleanup." -ForegroundColor Yellow
+    Write-Log "✅ Argo CD removed." -ForegroundColor Green
 }
 
-
-# ==============================================================================
-# 2. REMOVING APPLICATION NAMESPACES (dev-apps, staging-apps, prod-apps)
-# ==============================================================================
+# 2. REMOVING APPLICATION NAMESPACES
 Write-Host "`n==========================================================" -ForegroundColor Cyan
 Write-Host "2. Removing Application Namespaces (dev/staging/prod)" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
-
 if (Get-Command kubectl -ErrorAction SilentlyContinue) {
-    $appNamespaces = @("dev-apps", "staging-apps", "prod-apps")
-    foreach ($ns in $appNamespaces) {
-        Write-Log "Checking and deleting namespace: $ns..." -ForegroundColor Cyan
+    foreach ($ns in @("dev-apps", "staging-apps", "prod-apps")) {
         kubectl delete namespace $ns --force --grace-period=0 --ignore-not-found=true 2>$null
     }
-    Write-Log "✅ Application namespaces successfully removed." -ForegroundColor Green
-} else {
-    Write-Log "⚠️ kubectl not found, skipping app namespaces cleanup." -ForegroundColor Yellow
+    Write-Log "✅ App namespaces removed." -ForegroundColor Green
 }
 
-
-# ==============================================================================
-# 3. REMOVING NGINX INGRESS CONTROLLER
-# ==============================================================================
+# 3. REMOVING NGINX INGRESS
 Write-Host "`n==========================================================" -ForegroundColor Cyan
 Write-Host "3. Removing Nginx Ingress Controller" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
-
 if (Get-Command helm -ErrorAction SilentlyContinue) {
-    Write-Log "Uninstalling ingress-nginx Helm release..."
     helm uninstall ingress-nginx -n ingress-nginx --ignore-not-found=true 2>$null
     kubectl delete namespace ingress-nginx --ignore-not-found=true --force --grace-period=0 2>$null
-    Write-Log "✅ Nginx Ingress Controller successfully removed." -ForegroundColor Green
-} else {
-    Write-Log "⚠️ Helm not found, skipping Ingress cleanup." -ForegroundColor Yellow
+    Write-Log "✅ Nginx Ingress removed." -ForegroundColor Green
 }
 
-
-# ==============================================================================
-# 4. REMOVING HASHICORP VAULT
-# ==============================================================================
+# 4. REMOVING VAULT
 Write-Host "`n==========================================================" -ForegroundColor Cyan
 Write-Host "4. Removing HashiCorp Vault" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
-
 if (Get-Command helm -ErrorAction SilentlyContinue) {
-    Write-Log "Uninstalling Vault Helm release..."
     helm uninstall vault -n vault --ignore-not-found=true 2>$null
     kubectl delete namespace vault --force --grace-period=0 --ignore-not-found=true 2>$null
     kubectl delete mutatingwebhookconfiguration,validatingwebhookconfiguration -l app.kubernetes.io/name=vault --ignore-not-found=true 2>$null
     kubectl delete clusterrole,clusterrolebinding -l app.kubernetes.io/name=vault --ignore-not-found=true 2>$null
-    Write-Log "✅ HashiCorp Vault successfully removed." -ForegroundColor Green
-} else {
-    Write-Log "⚠️ Helm not found, skipping Vault cleanup." -ForegroundColor Yellow
+    Write-Log "✅ Vault removed." -ForegroundColor Green
 }
 
-
-# ==============================================================================
-# 5. REMOVING MONITORING STACK (Prometheus & Grafana)
-# ==============================================================================
+# 5. REMOVING MONITORING (Prometheus/Grafana)
 Write-Host "`n==========================================================" -ForegroundColor Cyan
-Write-Host "5. Removing Prometheus & Grafana (Monitoring Stack)" -ForegroundColor Yellow
+Write-Host "5. Removing Prometheus & Grafana" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
-
 if (Get-Command helm -ErrorAction SilentlyContinue) {
-    Write-Log "Uninstalling prometheus-stack Helm release..."
     helm uninstall prometheus-stack -n monitoring --ignore-not-found=true 2>$null
     kubectl delete namespace monitoring --ignore-not-found=true --force --grace-period=0 2>$null
-    Write-Log "✅ Monitoring stack successfully removed." -ForegroundColor Green
-} else {
-    Write-Log "⚠️ Helm not found, skipping Prometheus/Grafana cleanup." -ForegroundColor Yellow
+    Write-Log "✅ Monitoring stack removed." -ForegroundColor Green
 }
 
-
-# ==============================================================================
 # 6. REMOVING PGADMIN
-# ==============================================================================
 Write-Host "`n==========================================================" -ForegroundColor Cyan
 Write-Host "6. Removing PGAdmin" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
-
 if (Get-Command helm -ErrorAction SilentlyContinue) {
-    Write-Log "Uninstalling pgadmin Helm release..."
     helm uninstall pgadmin -n default --ignore-not-found=true 2>$null
-    Write-Log "✅ PGAdmin successfully removed." -ForegroundColor Green
-} else {
-    Write-Log "⚠️ Helm not found, skipping PGAdmin cleanup." -ForegroundColor Yellow
+    Write-Log "✅ PGAdmin removed." -ForegroundColor Green
 }
 
-
-# ==============================================================================
-# 7. REMOVING ACTIVEMQ ARTEMIS
-# ==============================================================================
+# 7. REMOVING ARTEMIS
 Write-Host "`n==========================================================" -ForegroundColor Cyan
 Write-Host "7. Removing ActiveMQ Artemis" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
-
 if (Get-Command helm -ErrorAction SilentlyContinue) {
-    Write-Log "Uninstalling Artemis Helm release..."
     helm uninstall artemis -n artemis --ignore-not-found=true --no-hooks 2>$null
     kubectl delete namespace artemis --ignore-not-found=true --force --grace-period=0 2>$null
-    Write-Log "✅ ActiveMQ Artemis successfully removed." -ForegroundColor Green
-} else {
-    Write-Log "⚠️ Helm not found, skipping Artemis cleanup." -ForegroundColor Yellow
+    Write-Log "✅ Artemis removed." -ForegroundColor Green
 }
 
-
-# ==============================================================================
-# 8. CLEANING UP LOCAL LOCK & TEMP FILES
-# ==============================================================================
+# 8. CLEANING TEMP FILES
 Write-Host "`n==========================================================" -ForegroundColor Cyan
 Write-Host "8. Cleaning up Local Temporary Files" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
-
-$tempFiles = @("vault-keys.json", "argo-patch.json")
-foreach ($file in $tempFiles) {
+foreach ($file in @("vault-keys.json", "argo-patch.json")) {
     if (Test-Path $file) {
         Remove-Item $file -Force -ErrorAction SilentlyContinue
-        Write-Log "🗑️ Removed local temporary file: $file" -ForegroundColor Yellow
+        Write-Log "🗑️ Removed: $file" -ForegroundColor Yellow
     }
 }
 
-
-# ==============================================================================
-# 9. STOPPING DOCKER COMPOSE SERVICES
-# ==============================================================================
+# 9. STOPPING DOCKER COMPOSE
 Write-Host "`n==========================================================" -ForegroundColor Cyan
 Write-Host "9. Stopping Core Docker Compose Services" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
-
 if (Get-Command docker -ErrorAction SilentlyContinue) {
-    Write-Log "Stopping and removing Docker Compose containers, networks, and volumes..."
-    docker compose down -v --remove-orphans
-    
-    Write-Log "Logging out from Docker registry..." -ForegroundColor Yellow
-    docker logout 2>$null
-    Write-Log "✅ Docker services stopped and cleaned." -ForegroundColor Green
-} else {
-    Write-Log "⚠️ Docker not found, skipping container cleanup." -ForegroundColor Yellow
-}
-
-
-# ==============================================================================
-# 10. REMOVING HASHICORP TERRAFORM CLI
-# ==============================================================================
-Write-Host "`n==========================================================" -ForegroundColor Cyan
-Write-Host "10. Removing HashiCorp Terraform CLI" -ForegroundColor Yellow
-Write-Host "==========================================================" -ForegroundColor Cyan
-
-if (Get-Command terraform -ErrorAction SilentlyContinue) {
-    Write-Log "Uninstalling HashiCorp Terraform via winget..." -ForegroundColor Cyan
-    try {
-        winget uninstall Hashicorp.Terraform --accept-source-agreements | Out-Null
-        Write-Log "✅ HashiCorp Terraform successfully uninstalled." -ForegroundColor Green
-    } catch {
-        Write-Log "⚠️ Failed to uninstall Terraform automatically. You can remove it manually." -ForegroundColor Yellow
+    if (Test-Path "config/docker-compose.yml") {
+        Push-Location "config"
+        docker compose down -v --remove-orphans
+        Pop-Location
+    } else {
+        docker compose down -v --remove-orphans 2>$null
     }
-} else {
-    Write-Log "⚠️ Terraform is not detected on the system, skipping." -ForegroundColor Yellow
+    docker logout 2>$null
+    Write-Log "✅ Docker containers stopped." -ForegroundColor Green
 }
 
-
-# ==============================================================================
-# FINAL COMPLETION
-# ==============================================================================
+# NOTE: Terraform CLI is PRESERVED and will NOT be uninstalled.
 Write-Host "`n==========================================================" -ForegroundColor Green
-Write-Host "✅ Done! Uninstallation and cleanup successful." -ForegroundColor Green
+Write-Host "✅ Done! Cleanup successful. Terraform CLI is preserved." -ForegroundColor Green
 Write-Host "==========================================================" -ForegroundColor Green
-Write-Log "All Kubernetes namespaces (including app namespaces), Helm releases, Docker containers, Terraform CLI, and temporary files have been fully purged."
