@@ -104,20 +104,26 @@ foreach ($file in @("vault-keys.json", "argo-patch.json")) {
     }
 }
 
-# 9. STOPPING DOCKER COMPOSE
+# ==============================================================================
+# 9. STOPPING DOCKER COMPOSE (Preserving Volumes)
+# ==============================================================================
 Write-Host "`n==========================================================" -ForegroundColor Cyan
 Write-Host "9. Stopping Core Docker Compose Services" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
+
 if (Get-Command docker -ErrorAction SilentlyContinue) {
-    if (Test-Path "config/docker-compose.yml") {
-        Push-Location "config"
-        docker compose down -v --remove-orphans
-        Pop-Location
+    $composeFile = Join-Path $PSScriptRoot "..\..\config\docker-compose.yml"
+    $projectDir  = Join-Path $PSScriptRoot "..\..\config"
+    $projectName = "npm-cicd" 
+    if (Test-Path $composeFile) {
+        Write-Log "Stopping Docker Compose containers for project '$projectName'..." -ForegroundColor Cyan
+        docker compose -f $composeFile --project-directory $projectDir -p $projectName down --remove-orphans
+        docker compose -f $composeFile --project-directory $projectDir -p config down --remove-orphans 2>$null
+        Write-Log "✅ Docker Compose stack stopped and removed (volumes preserved)." -ForegroundColor Green
     } else {
-        docker compose down -v --remove-orphans 2>$null
+        Write-Log "⚠️ docker-compose.yml not found, skipping container shutdown." -ForegroundColor Yellow
     }
     docker logout 2>$null
-    Write-Log "✅ Docker containers stopped." -ForegroundColor Green
 }
 
 # NOTE: Terraform CLI is PRESERVED and will NOT be uninstalled.
