@@ -3,6 +3,7 @@
 ![Kubernetes](https://img.shields.io/badge/Kubernetes-GitOps-blue?logo=kubernetes)
 ![Docker](https://img.shields.io/badge/Docker-Desktop-2496ED?logo=docker)
 ![Vagrant](https://img.shields.io/badge/Vagrant-Virtualization-1563FF?logo=vagrant)
+![Terraform](https://img.shields.io/badge/Terraform-Infrastructure-7B42BC?logo=terraform)
 ![Nexus](https://img.shields.io/badge/Nexus-Repository-1B1C1D?logo=sonatype)
 ![SonarQube](https://img.shields.io/badge/SonarQube-Security-4E9BCD?logo=sonarqube)
 ![Postgres](https://img.shields.io/badge/PostgreSQL-Database-336791?logo=postgresql)
@@ -12,7 +13,7 @@
 ![Artemis](https://img.shields.io/badge/ActiveMQ_Artemis-Message_Broker-D22128?logo=apache&logoColor=white)
 [![LinkedIn](https://img.shields.io/badge/Connect-LinkedIn-0A66C2?logo=linkedin)](https://www.linkedin.com/in/dedimohammadkurnia/)
 
-This repository provides a ready-to-use **Full-Stack Local DevOps & GitOps** ecosystem. It integrates a modern CI/CD pipeline using Jenkins, static code analysis for security with **SonarQube**, local database management (PostgreSQL + pgAdmin), HashiCorp Vault for automated secrets management, monitoring with Prometheus & Grafana, message brokering with ActiveMQ, object storage with MinIO, a local artifactory via **Sonatype Nexus 3**, and automated deployments to Kubernetes using **ArgoCD** following the **App of Apps** pattern. 
+This repository provides a ready-to-use **Full-Stack Local DevOps & GitOps** ecosystem. It integrates a modern CI/CD pipeline using Jenkins, static code analysis for security with **SonarQube**, local database management (PostgreSQL + pgAdmin), HashiCorp Vault for automated secrets management, **HashiCorp Terraform** for infrastructure automation tooling, monitoring with Prometheus & Grafana, message brokering with ActiveMQ, object storage with MinIO, a local artifactory via **Sonatype Nexus 3**, and automated deployments to Kubernetes using **ArgoCD** following the **App of Apps** pattern. 
 
 The infrastructure is highly flexible and can be run either completely isolated inside an **Ubuntu Linux Virtual Machine (via Vagrant)** or natively on **Host Docker Desktop (Windows/macOS)**.
 
@@ -20,16 +21,17 @@ The infrastructure is highly flexible and can be run either completely isolated 
 
 ## 🏗️ Architecture & Ecosystem
 
-This project applies the principle of **Separation of Concerns**, splitting the infrastructure between core Docker Compose services and Kubernetes (K3s) deployments:
+This project applies the principle of **Separation of Concerns**, splitting the infrastructure between core Docker Compose services and Kubernetes (K3s) deployments, backed by robust automation tools (Helm, Terraform, and kubectl):
 
-### 1. Core Services (Docker Compose)
-These components run directly on the Docker engine to provide stable base services:
+### 1. Core Services (Docker Compose & Tooling)
+These components run directly on the host or Docker engine to provide stable base services and CLI tooling:
 - **Jenkins (CI Server):** Manages automated pipelines handling checkout, static code analysis, unit testing via Docker, building Docker images, pushing to Docker Hub, and updating environment-specific Helm manifests in Git.
-  * *Hybrid Build Approach:* Uses a dual-Dockerfile setup (`Dockerfile.win` for the Windows Host workflow and `Dockerfile.jenkins.vagrant` for the Linux VM workflow) to resolve OS-specific DNS (`host.docker.internal`) and offline binary dependencies flawlessly.
+  * *Hybrid Build Approach:* Uses a dual-Dockerfile setup (`Dockerfile.win` for the Windows Host workflow and `Dockerfile.linux` for the Linux VM workflow) to resolve OS-specific DNS (`host.docker.internal`) and offline binary dependencies flawlessly.
 - **SonarQube (Static Analysis):** Performs Static Application Security Testing (SAST) and code quality checks to enforce Quality Gates before Docker images are built.
 - **Sonatype Nexus 3 (Artifactory):** Serves as a local repository manager (`raw-binaries`) hosting static binary files (such as `kubectl`, `argocd`, `buildx`, `docker.tgz`, and `sonar-scanner`). Uploads are automatically executed near the end of initialization to prevent boot timeouts.
 - **PostgreSQL (Database):** Serves as the primary relational database system for application workloads and SonarQube backend.
 - **MinIO (Object Storage):** Provides S3-compatible local object storage for file uploads, backups, and artifact storage.
+- **HashiCorp Terraform & Helm CLI:** Automatically checked and provisioned via installation scripts (`winget` / package managers) to prepare the environment for infrastructure and cluster deployments.
 
 ### 2. Kubernetes Services (K3s)
 These components run inside the Kubernetes cluster to mimic production-grade orchestration:
@@ -48,9 +50,12 @@ These components run inside the Kubernetes cluster to mimic production-grade orc
  ┣ 📂 ci                   
  ┃ ┗ 📜 Jenkinsfile        
  ┣ 📂 config               
+ ┃ ┣ 📜 docker-compose.yml   
+ ┃ ┣ 📜 Dockerfile.win         # Jenkins Dockerfile for Windows Host workflow
+ ┃ ┣ 📜 Dockerfile.linux       # Jenkins Dockerfile for Linux Host workflow
+ ┃ ┣ 📜 get-docker.sh 
  ┃ ┣ 📜 postgres17-connect.json
- ┃ ┣ 📜 prometheus.yml
- ┃ ┗ 📜 pgadmin.json
+ ┃ ┗ 📜 prometheus.yml
  ┣ 📂 k8s
  ┃ ┣ 📜 argocd.yaml            # ArgoCD Ingress, RBAC, & Root App
  ┃ ┣ 📂 argocd-apps        
@@ -63,7 +68,7 @@ These components run inside the Kubernetes cluster to mimic production-grade orc
  ┃    ┗ 📜 values-prod.yaml
  ┣ 📂 scripts              
  ┃ ┣ 📂 bash
- ┃ ┃ ┣ 📜 install.sh           # Automated K3s, Docker, & Vault setup script (Linux/Vagrant)
+ ┃ ┃ ┣ 📜 install.sh           # Automated K3s, Docker, Terraform & Vault setup script (Linux/Vagrant)
  ┃ ┃ ┣ 📜 teardown.sh          # Environment cleanup script
  ┃ ┃ ┗ 📜 Vagrantfile          # VM Configuration & Port Forwarding
  ┃ ┗ 📂 powershell
@@ -73,10 +78,7 @@ These components run inside the Kubernetes cluster to mimic production-grade orc
  ┃ ┣ 📜 index.js, package.json
  ┃ ┣ 📜 index.test.js          # Jest unit test
  ┃ ┗ 📜 Dockerfile         
- ┣ 📜 docker-compose.yml   
- ┣ 📜 .env                     # MUST be created before running installation scripts
- ┣ 📜 Dockerfile.win           # Jenkins Dockerfile for Windows Host workflow
- ┗ 📜 Dockerfile.linux         # Jenkins Dockerfile for Linux Host workflow
+ ┗ 📜 .env                     # MUST be created before running installation scripts
 ```
 
 ---
