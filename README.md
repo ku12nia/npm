@@ -47,38 +47,38 @@ These components run inside the Kubernetes cluster to mimic production-grade orc
 
 ```text
 📦 npm
- ┣ 📂 ci                   
- ┃ ┗ 📜 Jenkinsfile        
- ┣ 📂 config               
- ┃ ┣ 📜 docker-compose.yml   
- ┃ ┣ 📜 Dockerfile.win         # Jenkins Dockerfile for Windows Host workflow
- ┃ ┣ 📜 Dockerfile.linux       # Jenkins Dockerfile for Linux Host workflow
- ┃ ┣ 📜 get-docker.sh 
- ┃ ┣ 📜 postgres17-connect.json
- ┃ ┗ 📜 prometheus.yml
+ ┣ 📜 Jenkinsfile             # Pipeline script (moved to root or configured via Script Path)
+ ┣ 📂 config                  # Local infrastructure & supporting compose files
+ ┃ ┣ 📜 docker-compose.yml    # Local services stack (Jenkins, Smee, etc.)
+ ┃ ┣ 📜 Dockerfile.win        # Jenkins Dockerfile for Windows Host workflow
+ ┃ ┣ 📜 Dockerfile.linux      # Jenkins Dockerfile for Linux Host workflow
+ ┃ ┣ 📜 get-docker.sh         # Docker installation helper script
+ ┃ ┣ 📜 postgres17-connect.json # Database configuration reference
+ ┃ ┗ 📜 prometheus.yml        # Prometheus monitoring configuration
  ┣ 📂 k8s
- ┃ ┣ 📜 argocd.yaml            # ArgoCD Ingress, RBAC, & Root App
- ┃ ┣ 📂 argocd-apps        
- ┃ ┃ ┗ 📜 node-app-dev.yaml
- ┃ ┗ 📂 helm-chart
- ┃    ┣ 📂 templates        
- ┃    ┣ 📜 Chart.yaml
- ┃    ┣ 📜 values-dev.yaml     # Environment specific values
- ┃    ┣ 📜 values-staging.yaml
- ┃    ┗ 📜 values-prod.yaml
- ┣ 📂 scripts              
- ┃ ┣ 📂 bash
- ┃ ┃ ┣ 📜 install.sh           # Automated K3s, Docker, Terraform & Vault setup script (Linux/Vagrant)
- ┃ ┃ ┣ 📜 teardown.sh          # Environment cleanup script
- ┃ ┃ ┗ 📜 Vagrantfile          # VM Configuration & Port Forwarding
- ┃ ┗ 📂 powershell
- ┃   ┣ 📜 install.ps1          # Automated setup script (Windows Docker Desktop)
- ┃   ┗ 📜 uninstall.ps1        
- ┣ 📂 src                  
- ┃ ┣ 📜 index.js, package.json
- ┃ ┣ 📜 index.test.js          # Jest unit test
- ┃ ┗ 📜 Dockerfile         
- ┗ 📜 .env                     # MUST be created before running installation scripts
+ ┃ ┣ 📂 argocd                # Centralized ArgoCD configuration directory
+ ┃ ┃ ┣ 📜 argocd.yaml         # ArgoCD Ingress, RBAC, and core components
+ ┃ ┃ ┗ 📜 applications.yaml   # Consolidated ArgoCD apps (dev, staging, prod)
+ ┃ ┗ 📂 helm-chart            # Main application Helm Chart
+ ┃   ┣ 📂 templates           # Kubernetes manifests templates
+ ┃   ┣ 📜 Chart.yaml          # Helm chart metadata
+ ┃   ┣ 📜 values-dev.yaml     # Development environment values
+ ┃   ┣ 📜 values-staging.yaml # Staging environment values
+ ┃   ┗ 📜 values-prod.yaml    # Production environment values
+ ┣ 📂 scripts
+ ┃ ┣ 📂 bash                  # Linux / Vagrant automated setup & teardown scripts
+ ┃ ┃ ┣ 📜 install.sh          # Automated K3s, Docker, Terraform & Vault setup script (Linux/Vagrant)
+ ┃ ┃ ┣ 📜 teardown.sh         # Environment cleanup script
+ ┃ ┃ ┗ 📜 Vagrantfile         # VM Configuration & Port Forwarding
+ ┃ ┗ 📂 powershell            # Windows PowerShell installation & utility scripts
+ ┃   ┣ 📜 install.ps1         # Automated setup script (Windows Docker Desktop)
+ ┃   ┗ 📜 uninstall.ps1 
+ ┣ 📂 src                     # Node.js application source code & container definition
+ ┃ ┣ 📜 index.js              # Application entry point
+ ┃ ┣ 📜 index.test.js         # Jest unit tests
+ ┃ ┣ 📜 package.json          # Node dependencies and scripts
+ ┃ ┗ 📜 Dockerfile            # Application container image build file
+ ┗ 📜 .env                    # Local environment variables file (required for setup scripts)
 ```
 
 ---
