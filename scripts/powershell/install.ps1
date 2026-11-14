@@ -1,5 +1,5 @@
 ﻿# ==============================================================================
-# DEVOPS LAB AUTOMATION SCRIPT (K3s, Docker, Vault, ArgoCD, Nexus)
+# DEVOPS LAB AUTOMATION SCRIPT (K3s, Docker, Vault, ArgoCD, Nexus, Terraform)
 # ==============================================================================
 
 function Write-Log {
@@ -68,7 +68,7 @@ if (-not (Get-Command terraform -ErrorAction SilentlyContinue)) {
 
 
 # ==============================================================================
-# PHASE 1: DOCKER COMPOSE SERVICES (Jenkins, PostgreSQL, MinIO)
+# PHASE 1: DOCKER COMPOSE SERVICES (Jenkins, PostgreSQL, MinIO, Nexus)
 # ==============================================================================
 Write-Host "`n==========================================================" -ForegroundColor Cyan
 Write-Host "1. Local Services via Docker Compose" -ForegroundColor Yellow
@@ -185,8 +185,8 @@ Write-Host "==========================================================" -Foregro
 Write-Log "Cleaning up previous Vault installations..." -ForegroundColor Cyan
 helm uninstall vault -n vault --no-hooks --ignore-not-found 2>$null
 kubectl delete namespace vault --force --grace-period=0 --ignore-not-found 2>$null
-kubectl delete mutatingwebhookconfiguration,validatingwebhookconfiguration -l app.kubernetes.io/name=vault --ignore-not-found 2>$null
-kubectl delete clusterrole,clusterrolebinding -l app.kubernetes.io/name=vault --ignore-not-found 2>$null
+kubectl delete mutatingwebhookconfiguration,validatingwebhookconfiguration -l app.kubernetes.io/name=vault --ignore-not-found=true 2>$null
+kubectl delete clusterrole,clusterrolebinding -l app.kubernetes.io/name=vault --ignore-not-found=true 2>$null
 
 $keyFile = "vault-keys.json"
 if (Test-Path $keyFile) { Remove-Item $keyFile -Force -ErrorAction SilentlyContinue }
@@ -348,7 +348,7 @@ $ProgressPreference = 'Continue'
 # FINAL ACCESS DASHBOARD
 # ==============================================================================
 Write-Host "`n==========================================================" -ForegroundColor Green
-Write-Host "Done! All components successfully installed & configured." -ForegroundColor Green
+Write-Host "✅ Done! All components successfully installed & configured." -ForegroundColor Green
 Write-Host "==========================================================" -ForegroundColor Green
 Write-Host "ACCESS YOUR SERVICES:"
 Write-Log " - Jenkins    : http://localhost:8080"
