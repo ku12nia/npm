@@ -1,5 +1,5 @@
 # ==============================================================================
-# DEVOPS LAB CLEANUP & UNINSTALLATION SCRIPT (Final)
+# DEVOPS LAB CLEANUP & UNINSTALLATION SCRIPT (Updated)
 # ==============================================================================
 
 function Write-Log {
@@ -45,10 +45,29 @@ if (Get-Command kubectl -ErrorAction SilentlyContinue) {
 
 
 # ==============================================================================
-# 2. REMOVING NGINX INGRESS CONTROLLER
+# 2. REMOVING APPLICATION NAMESPACES (dev-apps, staging-apps, prod-apps)
 # ==============================================================================
 Write-Host "`n==========================================================" -ForegroundColor Cyan
-Write-Host "2. Removing Nginx Ingress Controller" -ForegroundColor Yellow
+Write-Host "2. Removing Application Namespaces (dev/staging/prod)" -ForegroundColor Yellow
+Write-Host "==========================================================" -ForegroundColor Cyan
+
+if (Get-Command kubectl -ErrorAction SilentlyContinue) {
+    $appNamespaces = @("dev-apps", "staging-apps", "prod-apps")
+    foreach ($ns in $appNamespaces) {
+        Write-Log "Checking and deleting namespace: $ns..." -ForegroundColor Cyan
+        kubectl delete namespace $ns --force --grace-period=0 --ignore-not-found=true 2>$null
+    }
+    Write-Log "✅ Application namespaces successfully removed." -ForegroundColor Green
+} else {
+    Write-Log "⚠️ kubectl not found, skipping app namespaces cleanup." -ForegroundColor Yellow
+}
+
+
+# ==============================================================================
+# 3. REMOVING NGINX INGRESS CONTROLLER
+# ==============================================================================
+Write-Host "`n==========================================================" -ForegroundColor Cyan
+Write-Host "3. Removing Nginx Ingress Controller" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
 
 if (Get-Command helm -ErrorAction SilentlyContinue) {
@@ -62,10 +81,10 @@ if (Get-Command helm -ErrorAction SilentlyContinue) {
 
 
 # ==============================================================================
-# 3. REMOVING HASHICORP VAULT
+# 4. REMOVING HASHICORP VAULT
 # ==============================================================================
 Write-Host "`n==========================================================" -ForegroundColor Cyan
-Write-Host "3. Removing HashiCorp Vault" -ForegroundColor Yellow
+Write-Host "4. Removing HashiCorp Vault" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
 
 if (Get-Command helm -ErrorAction SilentlyContinue) {
@@ -81,10 +100,10 @@ if (Get-Command helm -ErrorAction SilentlyContinue) {
 
 
 # ==============================================================================
-# 4. REMOVING MONITORING STACK (Prometheus & Grafana)
+# 5. REMOVING MONITORING STACK (Prometheus & Grafana)
 # ==============================================================================
 Write-Host "`n==========================================================" -ForegroundColor Cyan
-Write-Host "4. Removing Prometheus & Grafana (Monitoring Stack)" -ForegroundColor Yellow
+Write-Host "5. Removing Prometheus & Grafana (Monitoring Stack)" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
 
 if (Get-Command helm -ErrorAction SilentlyContinue) {
@@ -98,10 +117,10 @@ if (Get-Command helm -ErrorAction SilentlyContinue) {
 
 
 # ==============================================================================
-# 5. REMOVING PGADMIN
+# 6. REMOVING PGADMIN
 # ==============================================================================
 Write-Host "`n==========================================================" -ForegroundColor Cyan
-Write-Host "5. Removing PGAdmin" -ForegroundColor Yellow
+Write-Host "6. Removing PGAdmin" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
 
 if (Get-Command helm -ErrorAction SilentlyContinue) {
@@ -114,10 +133,10 @@ if (Get-Command helm -ErrorAction SilentlyContinue) {
 
 
 # ==============================================================================
-# 6. REMOVING ACTIVEMQ ARTEMIS
+# 7. REMOVING ACTIVEMQ ARTEMIS
 # ==============================================================================
 Write-Host "`n==========================================================" -ForegroundColor Cyan
-Write-Host "6. Removing ActiveMQ Artemis" -ForegroundColor Yellow
+Write-Host "7. Removing ActiveMQ Artemis" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
 
 if (Get-Command helm -ErrorAction SilentlyContinue) {
@@ -131,10 +150,10 @@ if (Get-Command helm -ErrorAction SilentlyContinue) {
 
 
 # ==============================================================================
-# 7. CLEANING UP LOCAL LOCK & TEMP FILES
+# 8. CLEANING UP LOCAL LOCK & TEMP FILES
 # ==============================================================================
 Write-Host "`n==========================================================" -ForegroundColor Cyan
-Write-Host "7. Cleaning up Local Temporary Files" -ForegroundColor Yellow
+Write-Host "8. Cleaning up Local Temporary Files" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
 
 $tempFiles = @("vault-keys.json", "argo-patch.json")
@@ -147,10 +166,10 @@ foreach ($file in $tempFiles) {
 
 
 # ==============================================================================
-# 8. STOPPING DOCKER COMPOSE SERVICES
+# 9. STOPPING DOCKER COMPOSE SERVICES
 # ==============================================================================
 Write-Host "`n==========================================================" -ForegroundColor Cyan
-Write-Host "8. Stopping Core Docker Compose Services" -ForegroundColor Yellow
+Write-Host "9. Stopping Core Docker Compose Services" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
 
 if (Get-Command docker -ErrorAction SilentlyContinue) {
@@ -166,10 +185,10 @@ if (Get-Command docker -ErrorAction SilentlyContinue) {
 
 
 # ==============================================================================
-# 9. REMOVING HASHICORP TERRAFORM CLI
+# 10. REMOVING HASHICORP TERRAFORM CLI
 # ==============================================================================
 Write-Host "`n==========================================================" -ForegroundColor Cyan
-Write-Host "9. Removing HashiCorp Terraform CLI" -ForegroundColor Yellow
+Write-Host "10. Removing HashiCorp Terraform CLI" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
 
 if (Get-Command terraform -ErrorAction SilentlyContinue) {
@@ -191,4 +210,4 @@ if (Get-Command terraform -ErrorAction SilentlyContinue) {
 Write-Host "`n==========================================================" -ForegroundColor Green
 Write-Host "✅ Done! Uninstallation and cleanup successful." -ForegroundColor Green
 Write-Host "==========================================================" -ForegroundColor Green
-Write-Log "All Kubernetes namespaces, Helm releases, Docker containers, Terraform CLI, and temporary files have been fully purged."
+Write-Log "All Kubernetes namespaces (including app namespaces), Helm releases, Docker containers, Terraform CLI, and temporary files have been fully purged."
