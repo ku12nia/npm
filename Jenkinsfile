@@ -284,7 +284,7 @@ pipeline {
                                     "🌿 <b>Environment:</b> ${targetEnv}${commitInfo}\n" +
                                     "${statusEmoji} <b>Status:</b> ${buildStatus}\n" +
                                     "===============================\n" +
-                                    "📝 <a href='${buildUrl}'>Klik untuk melihat log build</a>"
+                                    "📝 <a href='${buildUrl}'>Log Build = ${buildUrl}</a>"
 
                     withCredentials([string(credentialsId: 'telegram-bot-token', variable: 'TELEGRAM_TOKEN')]) {
                         def chatId = "-1003786747095"
