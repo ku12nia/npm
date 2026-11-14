@@ -12,7 +12,7 @@ pipeline {
         buildDiscarder(logRotator(numToKeepStr: '10'))
     }
     
-    // Automatic trigger from GitHub/Smee.io (Ensure the Webhook on GitHub is set to "Just the push event")
+    // Automatic trigger from GitHub/Smee.io
     triggers {
         githubPush()
     }
@@ -23,16 +23,13 @@ pipeline {
             steps {
                 script {
                     env.PADDED_BUILD_NUMBER = String.format("%02d", env.BUILD_NUMBER.toInteger())
-                    // Detect whether this build was triggered by a Webhook or manually
                     def buildCauses = currentBuild.getBuildCauses()
                     def isWebhook = buildCauses.any { it._class?.contains('GitHubPushCause') || it._class?.contains('SCMTriggerCause') }
                     
                     if (isWebhook) {
-                        // If triggered automatically by a webhook, we lock the env to 'dev'
                         env.TARGET_ENV = 'dev'
                         echo "🔄 Trigger otomatis dari Webhook terdeteksi. Memaksa environment ke: ${env.TARGET_ENV}"
                     } else {
-                        // If triggered manually (by clicking a button in Jenkins)
                         env.TARGET_ENV = params.DEPLOY_ENV
                         echo "👤 Trigger manual terdeteksi. Menggunakan environment: ${env.TARGET_ENV}"
                     }
@@ -46,8 +43,8 @@ pipeline {
         stage('1. Checkout Code') {
             steps {
                 script {
-                    // Semua environment menggunakan branch source of truth (dev atau main)
-                    def targetBranch = (env.TARGET_ENV == 'prod') ? 'main' : 'dev'
+                    def targetEnv = env.TARGET_ENV
+                    def targetBranch = (targetEnv == 'prod') ? 'main' : (targetEnv == 'staging') ? 'staging' : 'dev'
                     
                     if (env.LOCAL_SRC_PATH) {
                         echo "💻 Local Directory Mode Active!"
@@ -57,7 +54,7 @@ pipeline {
                             echo "✅ Local source code is ready to build."
                         }
                     } else {
-                        echo "🌐 Server Mode Active. Fetching from GitHub repository..."
+                        echo "🌐 Server Mode Active. Fetching from GitHub repository (Branch: ${targetBranch})..."
                         cleanWs()
                         try {
                             checkout([
@@ -74,7 +71,6 @@ pipeline {
                             ])
                             echo "✅ Successfully checked out from branch: ${targetBranch}."
 
-                            // Git commit info extraction
                             env.GIT_COMMIT_MSG = sh(script: 'git log -1 --pretty=%B', returnStdout: true).trim()
                             env.GIT_COMMIT_AUTHOR = sh(script: 'git log -1 --pretty=%an', returnStdout: true).trim()
                             echo "Trigger disebabkan oleh Push dari: ${env.GIT_COMMIT_AUTHOR}"
@@ -199,12 +195,12 @@ pipeline {
             }
         }
 
-        // Stage 5: Update Manifest & Push to Git (Hanya update lokal & commit DEV)
+        // Stage 5: Update Manifest & Push to Git (Berlaku untuk semua environment)
         stage('5. Update Manifest & Push to Git') {
             steps {
                 script {
                     def targetEnv = env.TARGET_ENV
-                    def targetBranch = (targetEnv == 'prod') ? 'main' : 'dev' 
+                    def targetBranch = (targetEnv == 'prod') ? 'main' : (targetEnv == 'staging') ? 'staging' : 'dev' 
                     def newImageTag = "${env.PADDED_BUILD_NUMBER}-${targetEnv}"
                     
                     dir("${env.WORKSPACE}") {
@@ -212,51 +208,46 @@ pipeline {
                         
                         echo """
                         ==========================================================
-                        🚀 [GIT OPS] UPDATING HELM MANIFEST
+                        🚀 [GIT OPS] UPDATING HELM MANIFEST (${targetEnv.toUpperCase()})
                         ==========================================================
                         📌 Target Env   : ${targetEnv}
                         📌 Target File  : ${targetValuesFile}
+                        📌 Target Branch: ${targetBranch}
                         🏷️  New Image Tag: ${newImageTag}
                         ==========================================================
                         """
                         
-                        // Eksekusi update file dan push git HANYA jika environment adalah 'dev'
-                        if (targetEnv == 'dev') {
-                            if (!fileExists(targetValuesFile)) {
-                                error("❌ File manifest ${targetValuesFile} tidak ditemukan di root workspace!")
-                            }
+                        if (!fileExists(targetValuesFile)) {
+                            error("❌ File manifest ${targetValuesFile} tidak ditemukan di root workspace!")
+                        }
+                        
+                        sh "sed -i 's/tag: .*/tag: \"${newImageTag}\"/g' ${targetValuesFile}"
+                        echo "✅ File ${targetValuesFile} has been successfully updated with tag: ${newImageTag}"
+                        
+                        sh 'git config --global user.email "dedimk.devops@gmail.com"'
+                        sh 'git config --global user.name "Dedi Mohammad Kurnia"'
+                        
+                        def changes = sh(script: 'git status --porcelain', returnStdout: true).trim()
+                        if (changes) {
+                            echo "🔍 File changes detected:\n${changes}"
+                            echo "⚙️ Performing commit & push process to branch: ${targetBranch}."
+                            sh "git add ${targetValuesFile}" 
+                            sh "git commit -m 'ci(argocd): update helm image tag for ${targetEnv} to ${newImageTag} [skip ci]'"
                             
-                            sh "sed -i 's/tag: .*/tag: \"${newImageTag}\"/g' ${targetValuesFile}"
-                            echo "✅ File ${targetValuesFile} has been successfully updated with tag: ${newImageTag}"
-                            
-                            sh 'git config --global user.email "dedimk.devops@gmail.com"'
-                            sh 'git config --global user.name "Dedi Mohammad Kurnia"'
-                            
-                            def changes = sh(script: 'git status --porcelain', returnStdout: true).trim()
-                            if (changes) {
-                                echo "🔍 File changes detected:\n${changes}"
-                                echo "⚙️ Performing commit & push process to branch: ${targetBranch}."
-                                sh "git add ${targetValuesFile}" 
-                                sh "git commit -m 'ci(argocd): update helm image tag for ${targetEnv} to ${newImageTag} [skip ci]'"
+                            withCredentials([gitUsernamePassword(credentialsId: 'github-creds')]) {
+                                sh "git stash"
+                                sh "git pull origin ${targetBranch} --rebase || true"
+                                sh "git stash pop || true"
                                 
-                                withCredentials([gitUsernamePassword(credentialsId: 'github-creds')]) {
-                                    sh "git stash"
-                                    sh "git pull origin ${targetBranch} --rebase || true"
-                                    sh "git stash pop || true"
-                                    
-                                    def gitPushStatus = sh(script: "git push origin HEAD:${targetBranch}", returnStatus: true)
-                                    if (gitPushStatus == 0) {
-                                        echo "🎉 [SUCCESS] Successfully pushed Helm manifest update to the branch: ${targetBranch}!"
-                                    } else {
-                                        unstable("⚠️ [WARNING] Failed to push to GitHub. Check credentials.")
-                                    }
+                                def gitPushStatus = sh(script: "git push origin HEAD:${targetBranch}", returnStatus: true)
+                                if (gitPushStatus == 0) {
+                                    echo "🎉 [SUCCESS] Successfully pushed Helm manifest update to the branch: ${targetBranch}!"
+                                } else {
+                                    unstable("⚠️ [WARNING] Failed to push to GitHub. Check credentials.")
                                 }
-                            } else {
-                                echo "⚠️ [SKIPPED] No changes to the manifest."
                             }
                         } else {
-                            echo "ℹ️ [SKIPPED] Push manifest ke Git diabaikan untuk environment ${targetEnv.toUpperCase()}."
-                            echo "💡 Silakan update manifest values secara manual via Pull Request sesuai prinsip GitOps."
+                            echo "⚠️ [SKIPPED] No changes to the manifest."
                         }
                     }
                 }
@@ -268,7 +259,7 @@ pipeline {
             steps {
                 script {
                     def targetEnv = env.TARGET_ENV
-                    def targetBranch = (targetEnv == 'prod') ? 'main' : 'dev'
+                    def targetBranch = (targetEnv == 'prod') ? 'main' : (targetEnv == 'staging') ? 'staging' : 'dev'
                     def appName = "node-app-${targetEnv}" 
                     def namespace = "${targetEnv}-apps" 
                     def argocdServer = "argocd.local"
@@ -281,6 +272,9 @@ pipeline {
                                 echo "🔐 Logging in to ArgoCD via CLI..."
                                 argocd login ${argocdServer} --username \$ARGOCD_USER --password \$ARGOCD_PASS --plaintext --insecure --grpc-web
                                 
+                                echo "📝 Ensuring namespace ${namespace} exists..."
+                                kubectl create namespace ${namespace} --dry-run=client -o yaml | kubectl apply -f - || true
+
                                 echo "📝 Ensuring application ${appName} is registered (tracking branch: ${targetBranch})..."
                                 argocd app create ${appName} \
                                   --repo https://github.com/ku12nia/npm.git \
@@ -308,7 +302,6 @@ pipeline {
     }    
     post {
         always {
-            // 1. Cleaning Workspace
             script {
                 try {
                     echo "🧹 Cleaning up the workspace to prevent the server disk from becoming full."
@@ -319,7 +312,6 @@ pipeline {
                 }
             }
 
-            // 2. Telegram Notification (Format HTML Diperbaiki)
             script {
                 try {
                     echo "📱 Sending notification to Telegram..."
@@ -328,7 +320,6 @@ pipeline {
                     def targetEnv = env.TARGET_ENV ?: 'N/A'
                     def buildUrl = "${env.BUILD_URL}"
                     
-                    // Compile commit info HTML, if available
                     def commitInfo = env.GIT_COMMIT_MSG ? "\n📌 <b>Commit:</b> ${env.GIT_COMMIT_MSG}\n👤 <b>Author:</b> ${env.GIT_COMMIT_AUTHOR}" : ""
                     
                     def tgMessage = "===============================\n" +
@@ -358,36 +349,3 @@ pipeline {
         }
     }
 }
-
-// git credential-manager logout github.com
-// git credential-manager github list
-// git config --global credential.modalPrompt false
-// git rev-parse --is-inside-work-tree
-
-// 🚀 **Release PR: `dev` ➡️ `main`**
-
-// 📄 **Ringkasan**
-// Penggabungan *changes* dari branch `dev` ke `main` (atau target branch) untuk otomatisasi deployment service npm dan pembaruan pipeline CI/CD.
-
-// ⚙️ **Detail Perubahan (Changelog)**
-// - **CI/CD Pipeline (Jenkins):**
-//   - Update `Jenkinsfile` workflow untuk automated build & image tagging.
-// - **GitOps & Helm (ArgoCD):**
-//   - Update Helm chart values untuk service `npm` (image tag sync).
-//   - Konfigurasi auto-sync & prune logic di ArgoCD.
-// - **Dependencies & Config (Vault / MinIO / DB):**
-//   - *(Opsional)* Penyesuaian env vars/secrets atau migrasi database.
-
-// ---
-
-// ✅ **Checklist Verifikasi (Pre & Post Merge)**
-
-// **Pre-Merge (CI Phase)**
-// - [ ] **Jenkins Build:** Pipeline di Jenkins Local berhasil (*SUCCESS*).
-// - [ ] **Artifact Registry:** Container image / package sukses ter-push ke Nexus/DockerHub.
-// - [ ] **Secrets Check:** Tidak ada plaintext credentials/secrets yang ter-commit ke Git (menggunakan Vault).
-
-// **Post-Merge (CD & Monitoring Phase)**
-// - [ ] **ArgoCD Sync:** Status aplikasi di Argo CD Local berubah menjadi `Synced` & `Healthy`.
-// - [ ] **Telegram Alert:** Bot Telegram menerima notifikasi webhook status deployment.
-// - [ ] **Metrics & Monitoring:** Health check service `npm` normal di Grafana / Prometheus Local.
