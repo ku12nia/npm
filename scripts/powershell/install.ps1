@@ -1,4 +1,8 @@
-﻿function Write-Log {
+﻿# ==============================================================================
+# DEVOPS LAB AUTOMATION SCRIPT (K3s, Docker, Vault, ArgoCD, Nexus)
+# ==============================================================================
+
+function Write-Log {
     param (
         [Parameter(Mandatory=$true)]
         [string]$Message,
@@ -8,120 +12,92 @@
     Write-Host "[$timestamp] $Message" -ForegroundColor $ForegroundColor
 }
 
-Write-Host "==========================================================" -ForegroundColor Cyan
+# ==============================================================================
+# PHASE 0: PREREQUISITES & ENVIRONMENT SETUP
+# ==============================================================================
+Write-Host "`n==========================================================" -ForegroundColor Cyan
 Write-Host "0. Prerequisite & Environment Setup" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
-# Loads the entire configuration from the .env file into the local PowerShell environment (process level)
+
 if (Test-Path ".env") {
     Write-Log "Loading environment variables from .env file..." -ForegroundColor Cyan
     Get-Content ".env" | ForEach-Object {
         if ($_ -match '^\s*([^#\s][^=]+)=(.*)$') {
-            $name =$matches[1].Trim()
-            $value =$matches[2].Trim()
-            [Environment]::SetEnvironmentVariable($name,$value, "Process")
+            $name  = $matches[1].Trim()
+            $value = $matches[2].Trim()
+            [Environment]::SetEnvironmentVariable($name, $value, "Process")
         }
     }
     Write-Log "✅ .env loaded successfully." -ForegroundColor Green
 } else {
     Write-Log "⚠️ Warning: .env file not found! Please create it before proceeding." -ForegroundColor Red
-    exit
+    exit 1
 }
-$WorkspaceName = if ($env:WORKSPACE_NAME) {$env:WORKSPACE_NAME } else { "npm-cicd" }
+
+$WorkspaceName = if ($env:WORKSPACE_NAME) { $env:WORKSPACE_NAME } else { "npm-cicd" }
 $WorkspaceDir = "/var/jenkins_home/workspace/$WorkspaceName"
 
-# Checks for the availability of the Helm CLI and automatically installs it using winget if it is not already detected on the system.
+# Check & Install Helm CLI
 if (-not (Get-Command helm -ErrorAction SilentlyContinue)) {
     Write-Log "Helm is not detected! Attempting to install Helm using winget..." -ForegroundColor Yellow
     try {
-        winget install Helm.Helm --accept-source-agreements --accept-package-agreements
+        winget install Helm.Helm --accept-source-agreements --accept-package-agreements | Out-Null
         $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+        Write-Log "✅ Helm successfully installed." -ForegroundColor Green
     } catch {
-        Write-Log "Failed to install/load Helm automatically." -ForegroundColor Red
-        exit
+        Write-Log "❌ Failed to install Helm automatically." -ForegroundColor Red
+        exit 1
     }
 } else {
     Write-Log "✅ Helm is already installed." -ForegroundColor Green
 }
 
-# Checks for the availability of the Terraform CLI and automatically installs it using winget
-# if (-not (Get-Command terraform -ErrorAction SilentlyContinue)) {
-#     Write-Log "Terraform is not detected! Attempting to install Terraform using winget..." -ForegroundColor Yellow
-#     try {
-#         winget install Hashicorp.Terraform --accept-source-agreements --accept-package-agreements
-#         $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
-#         Write-Log "✅ Terraform installed successfully." -ForegroundColor Green
-#     } catch {
-#         Write-Log "⚠️ Failed to install Terraform automatically. Please install it manually." -ForegroundColor Red
-#     }
-# } else {
-#     Write-Log "✅ Terraform is already installed on the host." -ForegroundColor Green
-# }
+# Check & Install Terraform CLI
+if (-not (Get-Command terraform -ErrorAction SilentlyContinue)) {
+    Write-Log "Terraform tidak ditemukan! Mencoba menginstal via winget..." -ForegroundColor Yellow
+    try {
+        winget install Hashicorp.Terraform --accept-source-agreements --accept-package-agreements | Out-Null
+        $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+        Write-Log "✅ Terraform berhasil diinstal." -ForegroundColor Green
+    } catch {
+        Write-Log "⚠️ Gagal menginstal Terraform secara otomatis. Harap instal manual." -ForegroundColor Yellow
+    }
+} else {
+    Write-Log "✅ Terraform sudah terpasang." -ForegroundColor Green
+}
 
-# Write-Host "`n==========================================================" -ForegroundColor Cyan
-# Write-Host "0.5. Automated Git Checkout (For local mode (dev) only; if using staging/prod, please clear the Docker volumes first.)" -ForegroundColor Yellow
-# Write-Host "==========================================================" -ForegroundColor Cyan
-# if ([string]::IsNullOrWhiteSpace($env:LOCAL_PROJECT_PATH)) {
-#     Write-Log "⚠️ The LOCAL_PROJECT_PATH variable was not found in .env. Skipping the automatic clone process." -ForegroundColor Yellow
-# } else {
-#     if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
-#         Write-Log "❌ Git is not detected on your Windows system! The script cannot perform an automatic clone." -ForegroundColor Red
-#     } else {
-#         if (-not (Test-Path "$($env:LOCAL_PROJECT_PATH)\.git")) {
-#             Write-Log "🔍 Local repository not found at $($env:LOCAL_PROJECT_PATH). Starting the git clone process." -ForegroundColor Cyan
-#             git clone https://github.com/ku12nia/npm.git $env:LOCAL_PROJECT_PATH
-#             if ($LASTEXITCODE -eq 0) {
-#                 Write-Log "✅ Git clone successful!" -ForegroundColor Green
-#             } else {
-#                 Write-Log "❌ Failed to perform git clone. Ensure that you have access to the repository." -ForegroundColor Red
-#             }
-#         } else {
-#             Write-Log "✅ Local repository already exists. Pulling the latest updates (git pull)" -ForegroundColor Green
-#             $currentPath = Get-Location
-#             Set-Location $env:LOCAL_PROJECT_PATH
-#             git pull
-#             Set-Location $currentPath
-#         }
-#     }
-# }
 
+# ==============================================================================
+# PHASE 1: DOCKER COMPOSE SERVICES (Jenkins, PostgreSQL, MinIO)
+# ==============================================================================
 Write-Host "`n==========================================================" -ForegroundColor Cyan
-Write-Host "1. Running Jenkins, PostgreSQL, and MinIO (Docker Compose)" -ForegroundColor Yellow
+Write-Host "1. Local Services via Docker Compose" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
-# Authenticates to Docker Hub and spins up containers for Jenkins, PostgreSQL, MinIO, and Nexus.
+
 if (-not [string]::IsNullOrWhiteSpace($env:DOCKER_USER) -and -not [string]::IsNullOrWhiteSpace($env:DOCKER_PASS)) {
     Write-Log "Logging in to Docker Hub as $($env:DOCKER_USER)..." -ForegroundColor Cyan
-    $env:DOCKER_PASS | docker login --username $env:DOCKER_USER --password-stdin
+    $env:DOCKER_PASS | docker login --username $env:DOCKER_USER --password-stdin | Out-Null
     if ($LASTEXITCODE -ne 0) {
-        Write-Log "❌ Docker login failed! Please check your credentials in .env" -ForegroundColor Red
-        exit
+        Write-Log "❌ Docker login failed! Check your credentials in .env" -ForegroundColor Red
+        exit 1
     } else {
         Write-Log "✅ Docker login successful!" -ForegroundColor Green
     }
 } else {
-    Write-Log "⚠️ DOCKER_USER or DOCKER_PASS not found in .env, skipping explicit login..." -ForegroundColor Yellow
+    Write-Log "⚠️ DOCKER_USER/DOCKER_PASS not found, skipping explicit login..." -ForegroundColor Yellow
 }
 
-# Fixes directory ownership permissions for Jenkins and Nexus volumes, then extracts the initial Jenkins admin password directly from inside the container.
-Write-Host "Fixing volume permissions for Jenkins..." -ForegroundColor Cyan
+Write-Log "Fixing volume permissions for Jenkins and Nexus..." -ForegroundColor Cyan
 docker run --rm -v npm_jenkins_home:/var/jenkins_home alpine chown -R 1000:1000 /var/jenkins_home 2>$null
 docker run --rm -v nexus_data:/nexus-data alpine chown -R 200:200 /nexus-data 2>$null
-$composeImageName = "npm-jenkins"
 
-Write-Log "🔍 Checking the availability of a custom Docker image ($composeImageName)..." -ForegroundColor Yellow
-$imageExists = docker images -q $composeImageName 2>$null
-if ([string]::IsNullOrWhiteSpace($imageExists)) {
-    Write-Log "⚙️ Image not yet available locally. Initiating initial build process." -ForegroundColor Cyan
-    # docker build -t npm-jenkins -f Dockerfile.win .
-    # docker compose up -d --build
-    docker compose up -d --force-recreate
-} else {
-    Write-Log "✅ Image '$composeImageName' Already available. Launching the container immediately." -ForegroundColor Green
-    # docker compose up -d
-    docker compose up -d --force-recreate
-}
-Write-Log "`nWaiting for Docker containers to initialize (20s)..." -ForegroundColor Magenta
+Write-Log "Launching Docker Compose stack..." -ForegroundColor Cyan
+docker compose up -d --build --force-recreate
+
+Write-Log "Waiting for Docker containers to initialize (20s)..." -ForegroundColor Magenta
 Start-Sleep -Seconds 20
-# --- Get Jenkins Password ---
+
+# Extract Jenkins Initial Password
 $jenkinsId = docker ps -q --filter "name=jenkins"
 $jenkinsPass = ""
 if ($jenkinsId) {
@@ -129,171 +105,96 @@ if ($jenkinsId) {
     if ($rawPass) { $jenkinsPass = $rawPass.Trim() }
 }
 if ([string]::IsNullOrWhiteSpace($jenkinsPass)) {
-    $jenkinsPass = "InitAdminPassword has been performed; please log in using the credentials registered in Jenkins."
+    $jenkinsPass = "Already initialized; use registered credentials."
 }
 
 
+# ==============================================================================
+# PHASE 2: KUBERNETES CORE NETWORKING (Ingress-Nginx)
+# ==============================================================================
 Write-Host "`n==========================================================" -ForegroundColor Cyan
-Write-Host "2. Setup Argo CD on Kubernetes (K3s)" -ForegroundColor Yellow
+Write-Host "2. Setup Nginx Ingress Controller" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
-# Deploys ArgoCD to the K3s cluster and waits until all pods achieve a ready state.
-kubectl create namespace argocd
-kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
-Write-Log "`nWaiting for Argo CD pods to become ready (this takes a few minutes)..." -ForegroundColor Magenta
-kubectl wait --for=condition=ready pod --all -n argocd --timeout=300s
-$argocdPass = "P4ssw0rdArgoCD"
-Write-Log "`nLocking the ArgoCD admin password..." -ForegroundColor Green
 
-#Generates a custom ArgoCD admin password using native Bcrypt hashing, patches the Kubernetes secret, applies the Ingress manifest, and restarts the pod to apply changes.
+helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx | Out-Null
+helm repo update | Out-Null
+helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx `
+    --namespace ingress-nginx `
+    --create-namespace `
+    --set controller.service.type=LoadBalancer | Out-Null
+Write-Log "✅ Ingress Nginx ready." -ForegroundColor Green
+
+
+# ==============================================================================
+# PHASE 3: ARGO CD SETUP & PASSWORD LOCKING
+# ==============================================================================
+Write-Host "`n==========================================================" -ForegroundColor Cyan
+Write-Host "3. Setup Argo CD on Kubernetes (K3s)" -ForegroundColor Yellow
+Write-Host "==========================================================" -ForegroundColor Cyan
+
+kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f - | Out-Null
+kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml | Out-Null
+
+Write-Log "Waiting for Argo CD pods to become ready..." -ForegroundColor Magenta
+kubectl wait --for=condition=ready pod --all -n argocd --timeout=300s | Out-Null
+
+$argocdPass = "P4ssw0rdArgoCD"
+Write-Log "Locking the ArgoCD admin password..." -ForegroundColor Cyan
+
 $bcryptOutput = kubectl exec -n argocd deploy/argocd-server -- argocd account bcrypt --password $argocdPass 2>$null
 $bcryptHash = ($bcryptOutput | Select-Object -Last 1).Trim()
 $encodedHash = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($bcryptHash))
 $encodedMtime = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes((Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")))
-# Patch the ArgoCD Secret with a permanent hash
+
 $patchContent = "{ `"data`": { `"admin.password`": `"$encodedHash`", `"admin.passwordMtime`": `"$encodedMtime`" } }"
 $patchContent | Out-File -FilePath "argo-patch.json" -Encoding utf8
-kubectl patch secret argocd-secret -n argocd --type='merge' --patch-file argo-patch.json
+kubectl patch secret argocd-secret -n argocd --type='merge' --patch-file argo-patch.json | Out-Null
 Remove-Item "argo-patch.json" -ErrorAction SilentlyContinue
-kubectl delete secret argocd-initial-admin-secret -n argocd --ignore-not-found=true
-# Apply manifest ConfigMap & Ingress sebelum restart pod
-Write-Log "`nApplying ArgoCD local manifest (ConfigMap & Ingress)..." -ForegroundColor Yellow
-kubectl apply -f k8s/argocd.yaml
-# Restart the pod so it reads the newly applied insecure ConfigMap
-kubectl rollout restart deploy/argocd-server -n argocd
-kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=argocd-server -n argocd --timeout=120s
-Write-Log "[SUCCESS] The ArgoCD password has been successfully locked to: $argocdPass" -ForegroundColor Green
+kubectl delete secret argocd-initial-admin-secret -n argocd --ignore-not-found=true | Out-Null
+
+kubectl apply -f k8s/argocd.yaml | Out-Null
+kubectl rollout restart deploy/argocd-server -n argocd | Out-Null
+kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=argocd-server -n argocd --timeout=120s | Out-Null
+Write-Log "✅ ArgoCD successfully configured." -ForegroundColor Green
 
 
-# Sequentially executes K3s installations via Helm for the Nginx Ingress Controller, PGAdmin, the monitoring stack (Prometheus & Grafana), HashiCorp Vault, and the ActiveMQ Artemis message broker.
+# ==============================================================================
+# PHASE 4: PGADMIN SETUP
+# ==============================================================================
 Write-Host "`n==========================================================" -ForegroundColor Cyan
-Write-Host "3. Setup Nginx Ingress Controller (Core Networking)" -ForegroundColor Yellow
+Write-Host "4. Setup PGAdmin on Kubernetes" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
-helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
-helm repo update
-helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx `
-    --namespace ingress-nginx `
-    --create-namespace `
-    --set controller.service.type=LoadBalancer
 
-# helm repo add cilium https://helm.cilium.io/
-# helm install cilium cilium/cilium --version 1.14.0 --namespace kube-system --set ingressController.enabled=true --set ingressController.default=true
-
-Write-Host "`n==========================================================" -ForegroundColor Cyan
-Write-Host "4. Setup PGAdmin on Kubernetes (K3s via Helm)" -ForegroundColor Yellow
-Write-Host "==========================================================" -ForegroundColor Cyan
-helm repo add runix https://helm.runix.net
-helm repo update
-
+helm repo add runix https://helm.runix.net | Out-Null
+helm repo update | Out-Null
 helm upgrade --install pgadmin runix/pgadmin4 -n default `
     --set env.email="$env:PGADMIN_EMAIL" `
     --set env.password="$env:PGADMIN_PASSWORD" `
     --set service.type=LoadBalancer `
-    --set service.port=8081
+    --set service.port=8081 | Out-Null
+Write-Log "✅ PGAdmin deployed." -ForegroundColor Green
 
 
+# ==============================================================================
+# PHASE 5: HASHICORP VAULT (Deployment, Unseal, & Secret Population)
+# ==============================================================================
 Write-Host "`n==========================================================" -ForegroundColor Cyan
-Write-Host "5. Setup Prometheus & Grafana on Kubernetes (K3s)" -ForegroundColor Yellow
+Write-Host "5. Setup HashiCorp Vault on Kubernetes (Production Mode)" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
-kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
-helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-helm repo update
 
-helm upgrade --install prometheus-stack prometheus-community/kube-prometheus-stack -n monitoring --reuse-values `
-    --set grafana.ingress.enabled=true `
-    --set grafana.ingress.ingressClassName=nginx `
-    --set "grafana.ingress.hosts={grafana.local}" `
-    --set prometheus.service.type=LoadBalancer `
-    --set prometheus.service.port=9090
-
-Write-Host "`nWaiting for the Grafana pod to reach a ready state." -ForegroundColor Magenta
-Start-Sleep -Seconds 15
-kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=grafana -n monitoring --timeout=300s
-
-
-Write-Host "`n==========================================================" -ForegroundColor Cyan
-Write-Host "6. Setup HashiCorp Vault on Kubernetes (K3s via Helm)" -ForegroundColor Yellow
-Write-Host "==========================================================" -ForegroundColor Cyan
-kubectl create namespace vault --dry-run=client -o yaml | kubectl apply -f -
-helm repo add hashicorp https://helm.releases.hashicorp.com
-helm repo update
-
-helm upgrade --install vault hashicorp/vault -n vault `
-    --set "server.dev.enabled=true" `
-    --set "injector.enabled=true" `
-    --set "ui.enabled=true" `
-    --set "ui.serviceType=LoadBalancer" `
-    --set "ui.externalPort=8200"
-
-Write-Host "`n==========================================================" -ForegroundColor Cyan
-Write-Host "7. Setup ActiveMQ Artemis on Kubernetes (K3s via Manifest)" -ForegroundColor Yellow
-Write-Host "==========================================================" -ForegroundColor Cyan
-Write-Host "Creating 'artemis' namespace..." -ForegroundColor Cyan
-kubectl create namespace artemis --dry-run=client -o yaml | kubectl apply -f -
-
-Write-Log "Injecting Artemis Credentials from .env to Kubernetes Secret..." -ForegroundColor Cyan
-kubectl create secret generic artemis-credentials -n artemis `
-    --from-literal=ARTEMIS_USER="$env:ARTEMIS_USER" `
-    --from-literal=ARTEMIS_PASSWORD="$env:ARTEMIS_PASSWORD" `
-    --dry-run=client -o yaml | kubectl apply -f -
-
-Write-Log "Applying Artemis StatefulSet Manifest." -ForegroundColor Cyan
-kubectl apply -f k8s/artemis.yaml
-
-Write-Log "`nWaiting for the Artemis Pod to reach ready status." -ForegroundColor Magenta
-Start-Sleep -Seconds 10
-kubectl wait --for=condition=ready pod -l app=artemis -n artemis --timeout=300s
-
-# --- Non Helm ---
-# Write-Host "`n==========================================================" -ForegroundColor Cyan
-# Write-Host "7. Setup ActiveMQ Artemis on Kubernetes (K3s via Manifest)" -ForegroundColor Yellow
-# Write-Host "==========================================================" -ForegroundColor Cyan
-# Write-Host "Creating 'artemis' namespace..." -ForegroundColor Cyan
-# kubectl create namespace artemis --dry-run=client -o yaml | kubectl apply -f -
-
-# Write-Host "Injecting Artemis Credentials from .env to Kubernetes Secret..." -ForegroundColor Cyan
-# kubectl create secret generic artemis-credentials -n artemis `
-#     --from-literal=ARTEMIS_USER="$env:ARTEMIS_USER" `
-#     --from-literal=ARTEMIS_PASSWORD="$env:ARTEMIS_PASSWORD" `
-#     --dry-run=client -o yaml | kubectl apply -f -
-
-# Write-Host "Applying Artemis StatefulSet Manifest..." -ForegroundColor Cyan
-# kubectl apply -f k8s/artemis.yaml
-
-
-Write-Host "`n==========================================================" -ForegroundColor Cyan
-Write-Host "8. Complete The Installation Process" -ForegroundColor Yellow
-Write-Host "==========================================================" -ForegroundColor Cyan
-$grafanaPass = ""
-$encodedGrafana = kubectl get secret prometheus-stack-grafana -n monitoring -o jsonpath="{.data.admin-password}" 2>$null
-if ($encodedGrafana) {
-    $grafanaPass = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($encodedGrafana))
-} else {
-    $grafanaPass = "prom-operator" 
-}
-
-# 1. Complete cleanup of global resources & legacy namespaces
-Write-Log "Cleaning up global resources and previous Vault installations." -ForegroundColor Cyan
+Write-Log "Cleaning up previous Vault installations..." -ForegroundColor Cyan
 helm uninstall vault -n vault --no-hooks --ignore-not-found 2>$null
 kubectl delete namespace vault --force --grace-period=0 --ignore-not-found 2>$null
-kubectl delete mutatingwebhookconfiguration vault-agent-injector-cfg --ignore-not-found 2>$null
-kubectl delete validatingwebhookconfiguration vault-agent-injector-webhook --ignore-not-found 2>$null
-kubectl delete clusterrole vault-agent-injector-clusterrole --ignore-not-found 2>$null
-kubectl delete clusterrolebinding vault-agent-injector-clusterrolebinding --ignore-not-found 2>$null
-# 2. Safely delete any existing local key file, if present
+kubectl delete mutatingwebhookconfiguration,validatingwebhookconfiguration -l app.kubernetes.io/name=vault --ignore-not-found 2>$null
+kubectl delete clusterrole,clusterrolebinding -l app.kubernetes.io/name=vault --ignore-not-found 2>$null
+
 $keyFile = "vault-keys.json"
-if (Test-Path $keyFile) {
-    try {
-        Remove-Item $keyFile -Force -ErrorAction Stop
-        Write-Log "✅ Successfully deleted the old lock file ($keyFile)." -ForegroundColor Green
-    } catch {
-        Write-Log "⚠️ Failed to delete $keyFile; the file may be in use by another process." -ForegroundColor Yellow
-    }
-}
-# 3. Recreate the namespace and run Helm install
-kubectl create namespace vault --dry-run=client -o yaml | kubectl apply -f -
-helm repo add hashicorp https://helm.releases.hashicorp.com
-helm repo update
-# 4. Enabling Production Mode with a 1GB Persistent Volume Claim (PVC)
+if (Test-Path $keyFile) { Remove-Item $keyFile -Force -ErrorAction SilentlyContinue }
+
+kubectl create namespace vault --dry-run=client -o yaml | kubectl apply -f - | Out-Null
+helm repo add hashicorp https://helm.releases.hashicorp.com | Out-Null
+helm repo update | Out-Null
+
 helm upgrade --install vault hashicorp/vault -n vault `
     --set "server.dev.enabled=false" `
     --set "server.dataStorage.enabled=true" `
@@ -301,157 +202,161 @@ helm upgrade --install vault hashicorp/vault -n vault `
     --set "injector.enabled=true" `
     --set "ui.enabled=true" `
     --set "ui.serviceType=LoadBalancer" `
-    --set "ui.externalPort=8200"
+    --set "ui.externalPort=8200" | Out-Null
 
-# Executes cluster initialization (1 key share), saves the root token to vault-keys.json, performs an automatic unseal, and enables the KV v2 Secrets Engine.
-Write-Log "`nWaiting for Vault pod to be created..." -ForegroundColor Magenta
-Start-Sleep -Seconds 10
-kubectl wait --for=condition=ready pod/vault-0 -n vault --timeout=120s
-Write-Log "`nChecking Vault Initialization and Seal Status..." -ForegroundColor Yellow
-$vaultStatusJson = kubectl exec -n vault vault-0 -- vault status -format=json 2>$null
-$vaultStatus = $vaultStatusJson | ConvertFrom-Json
-if ($vaultStatus.initialized -eq $false) {
-    Write-Log "⚙️ Vault has not been initialized. Starting the initialization process (1 Key Share)." -ForegroundColor Cyan
-    $initResult = kubectl exec -n vault vault-0 -- vault operator init -key-shares=1 -key-threshold=1 -format=json
-    $initResult | Out-File -FilePath $keyFile -Encoding utf8
-    Write-Log "✅ Vault initialized! New key stored in '$keyFile'." -ForegroundColor Green
+Write-Log "Waiting for Vault pod to be ready..." -ForegroundColor Magenta
+kubectl wait --for=condition=ready pod/vault-0 -n vault --timeout=120s | Out-Null
+
+$vaultStatus = kubectl exec -n vault vault-0 -- vault status -format=json 2>$null | ConvertFrom-Json
+if (-not $vaultStatus.initialized) {
+    Write-Log "⚙️ Initializing Vault (1 Key Share)..." -ForegroundColor Cyan
+    kubectl exec -n vault vault-0 -- vault operator init -key-shares=1 -key-threshold=1 -format=json | Out-File -FilePath $keyFile -Encoding utf8
+    Write-Log "✅ Vault initialized & keys saved." -ForegroundColor Green
 } else {
-    Write-Log "✅ Vault has already been initialized." -ForegroundColor Green
+    Write-Log "✅ Vault was already initialized." -ForegroundColor Green
 }
-# Reading tokens and keys from a new local file
+
 if (-not (Test-Path $keyFile)) {
-    Write-Log "❌ File $keyFile not found! Unable to perform unseal." -ForegroundColor Red
-    exit
+    Write-Log "❌ File $keyFile not found! Cannot unseal." -ForegroundColor Red
+    exit 1
 }
+
 $vaultKeys = Get-Content $keyFile | ConvertFrom-Json
 $unsealKey = $vaultKeys.unseal_keys_b64[0]
-$VaultRootToken = $vaultKeys.root_token
-# Checking whether Vault is in a Sealed (locked) state
-$vaultStatusJson = kubectl exec -n vault vault-0 -- vault status -format=json 2>$null
-$vaultStatus = $vaultStatusJson | ConvertFrom-Json
-if ($vaultStatus.sealed -eq$true) {
-    Write-Log "🔐 Vault is in a Sealed state. Performing automatic unseal." -ForegroundColor Cyan
+$vaultRootToken = $vaultKeys.root_token
+
+$vaultStatus = kubectl exec -n vault vault-0 -- vault status -format=json 2>$null | ConvertFrom-Json
+if ($vaultStatus.sealed) {
+    Write-Log "🔐 Unsealing Vault..." -ForegroundColor Cyan
     kubectl exec -n vault vault-0 -- vault operator unseal $unsealKey | Out-Null
-    Write-Log "🔓 Vault successfully unsealed!" -ForegroundColor Green
+    Write-Log "🔓 Vault unsealed successfully!" -ForegroundColor Green
 } else {
-    Write-Log "🔓 The vault is already in an unsealed state.." -ForegroundColor Green
+    Write-Log "🔓 Vault is already unsealed." -ForegroundColor Green
 }
 
-Write-Log "`nChecking and enabling the KV Secrets Engine at the path 'secret/'" -ForegroundColor Yellow
-kubectl exec -n vault vault-0 -- vault login $VaultRootToken | Out-Null
-$secretsList = kubectl exec -n vault vault-0 -- vault secrets list -format=json 2>$null
-$secretsObj = $secretsList | ConvertFrom-Json
-if (-not $secretsObj.'secret/') {
-    Write-Log "⚙️ The 'secret/' path is not yet active. Activating the KV v2 engine." -ForegroundColor Cyan
+# Enable KV v2 Secrets Engine
+kubectl exec -n vault vault-0 -- vault login $vaultRootToken | Out-Null
+$secretsList = kubectl exec -n vault vault-0 -- vault secrets list -format=json 2>$null | ConvertFrom-Json
+if (-not $secretsList.'secret/') {
     kubectl exec -n vault vault-0 -- vault secrets enable -path=secret -version=2 kv | Out-Null
-    Write-Log "✅ KV v2 Engine successfully activated in 'secret/'!" -ForegroundColor Green
+    Write-Log "✅ KV v2 Secrets Engine enabled at 'secret/'." -ForegroundColor Green
 } else {
     Write-Log "✅ Path 'secret/' already active." -ForegroundColor Green
 }
 
-Write-Log "`nStoring all service & Jenkins credentials into Vault." -ForegroundColor Yellow
-# Infrastructure & Data Services
-kubectl exec -n vault vault-0 -- vault kv put secret/database/postgres username="postgres" password="$env:POSTGRES_PASSWORD" | Out-Null
-kubectl exec -n vault vault-0 -- vault kv put secret/pgadmin admin_email="$env:PGADMIN_EMAIL" admin_password="$env:PGADMIN_PASSWORD" | Out-Null
-kubectl exec -n vault vault-0 -- vault kv put secret/minio root_user="$env:MINIO_ROOT_USER" root_password="$env:MINIO_ROOT_PASSWORD" | Out-Null
-kubectl exec -n vault vault-0 -- vault kv put secret/artemis admin_user="$env:ARTEMIS_USER" admin_password="$env:ARTEMIS_PASSWORD" | Out-Null
-# CI/CD & Monitoring Services
-kubectl exec -n vault vault-0 -- vault kv put secret/nexus admin_user="admin" admin_password="$env:NEXUS_PASSWORD" | Out-Null
-kubectl exec -n vault vault-0 -- vault kv put secret/argocd admin_user="admin" admin_password="$env:ARGOCD_PASSWORD" | Out-Null
-kubectl exec -n vault vault-0 -- vault kv put secret/grafana admin_user="admin" admin_password="$grafanaPass" | Out-Null
-kubectl exec -n vault vault-0 -- vault kv put secret/jenkins/admin admin_user="jenkins" admin_password="$env:JENKINS_PASSWORD" | Out-Null
-# External Credentials for Jenkins Pipelines
-kubectl exec -n vault vault-0 -- vault kv put secret/jenkins/github username="$env:GITHUB_USER" token="$env:GITHUB_TOKEN" | Out-Null
-kubectl exec -n vault vault-0 -- vault kv put secret/jenkins/dockerhub username="$env:DOCKER_USER" password="$env:DOCKER_PASS" | Out-Null
-kubectl exec -n vault vault-0 -- vault kv put secret/argocd admin_user="admin" admin_password="$argocdPass" | Out-Null
-Write-Log "✅ All credentials have been successfully exported to the KV Vault (secret/)." -ForegroundColor Green
+# Populate Secrets Map
+Write-Log "Storing service credentials into Vault..." -ForegroundColor Yellow
+$secretsMap = @{
+    "secret/database/postgres"  = @{ username = "postgres"; password = "$env:POSTGRES_PASSWORD" }
+    "secret/pgadmin"            = @{ admin_email = "$env:PGADMIN_EMAIL"; admin_password = "$env:PGADMIN_PASSWORD" }
+    "secret/minio"              = @{ root_user = "$env:MINIO_ROOT_USER"; root_password = "$env:MINIO_ROOT_PASSWORD" }
+    "secret/artemis"            = @{ admin_user = "$env:ARTEMIS_USER"; admin_password = "$env:ARTEMIS_PASSWORD" }
+    "secret/nexus"              = @{ admin_user = "admin"; admin_password = "$env:NEXUS_PASSWORD" }
+    "secret/argocd"             = @{ admin_user = "admin"; admin_password = "$argocdPass" }
+    "secret/jenkins/admin"      = @{ admin_user = "jenkins"; admin_password = "$env:JENKINS_PASSWORD" }
+    "secret/jenkins/github"     = @{ username = "$env:GITHUB_USER"; token = "$env:GITHUB_TOKEN" }
+    "secret/jenkins/dockerhub"  = @{ username = "$env:DOCKER_USER"; password = "$env:DOCKER_PASS" }
+}
 
-Write-Log "📦 Uploading Local Binary Files to Nexus Repository" -ForegroundColor Yellow
-# Communicates with the local Nexus REST API to create a raw-type repository named raw-binaries and Uploads local binary files from the bin folder to the Nexus repository using curl.
+foreach ($path in $secretsMap.Keys) {
+    $pairs = $secretsMap[$path]
+    $argString = ""
+    foreach ($k in $pairs.Keys) {
+        $val = $pairs[$k]
+        if (-not [string]::IsNullOrEmpty($val)) {
+            $argString += "$k=`"$val`" "
+        }
+    }
+    if ($argString) {
+        kubectl exec -n vault vault-0 -- vault kv put $path $argString | Out-Null
+    }
+}
+Write-Log "✅ All credentials successfully exported to Vault." -ForegroundColor Green
+
+
+# ==============================================================================
+# PHASE 6: NEXUS REPOSITORY & BINARY UPLOADS
+# ==============================================================================
+Write-Host "`n==========================================================" -ForegroundColor Cyan
+Write-Host "6. Nexus Binary Uploads" -ForegroundColor Yellow
+Write-Host "==========================================================" -ForegroundColor Cyan
+
 $ProgressPreference = 'SilentlyContinue'
 $binFolder = "$env:LOCAL_PROJECT_PATH\bin"
 $nexusUrl = "http://127.0.0.1:8082"
 $repoName = "raw-binaries"
 $nexusPass = $env:NEXUS_PASSWORD
+
 if ([string]::IsNullOrWhiteSpace($nexusPass)) {
-    Write-Log "⚠️ NEXUS_PASSWORD not found in .env! Skipping the automatic upload process." -ForegroundColor Red
+    Write-Log "⚠️ NEXUS_PASSWORD not found in .env! Skipping Nexus uploads." -ForegroundColor Red
 } else {
-    Write-Log "Checking and creating repository '$repoName' in Nexus." -ForegroundColor Cyan
     $base64AuthInfo = [Convert]::ToBase64String([System.Text.Encoding]::ASCII.GetBytes(("admin:{0}" -f $nexusPass)))
     $headers = @{
-        Authorization = ("Basic {0}" -f $base64AuthInfo)
+        Authorization  = ("Basic {0}" -f $base64AuthInfo)
         "Content-Type" = "application/json"
     }
     $repoPayload = @{
-        name = $repoName
+        name   = $repoName
         online = $true
         storage = @{
-            blobStoreName = "default"
-            strictContentTypeValidation = $false
-            writePolicy = "ALLOW"
+            blobStoreName               = "default"
+            strictContentTypeValidation = false
+            writePolicy                 = "ALLOW"
         }
-        raw = @{
-            contentDisposition = "ATTACHMENT"
-        }
+        raw = @{ contentDisposition = "ATTACHMENT" }
     } | ConvertTo-Json -Depth 10
 
     $authFailed = $false
     try {
         Invoke-RestMethod -Uri "$nexusUrl/service/rest/v1/repositories/raw/hosted" -Method Post -Headers $headers -Body $repoPayload -ErrorAction Stop | Out-Null
-        Write-Log "✅ Repository '$repoName' successfully created via API." -ForegroundColor Green
+        Write-Log "✅ Repository '$repoName' created via API." -ForegroundColor Green
     } catch {
         $statusCode = $_.Exception.Response.StatusCode.Value__
         if ($statusCode -eq 401) {
-            Write-Log "❌ Authentication Failed! The Nexus password is incorrect. Ensure that NEXUS_PASSWORD in the .env file is valid." -ForegroundColor Red
+            Write-Log "❌ Authentication Failed! Invalid Nexus password." -ForegroundColor Red
             $authFailed = $true
         } elseif ($statusCode -eq 400 -or $statusCode -eq 422) {
-            Write-Log "❌ Failed to create repository. API payload rejected by Nexus." -ForegroundColor Red
+            Write-Log "❌ Payload rejected by Nexus API." -ForegroundColor Red
             $authFailed = $true
         } else {
-            Write-Log "✅ Repository '$repoName' already available in the system." -ForegroundColor Green
+            Write-Log "✅ Repository '$repoName' already exists." -ForegroundColor Green
         }
     }
 
-    if (-not $authFailed) {
-        if (Test-Path $binFolder) {
-            $files = Get-ChildItem -Path $binFolder -File
-            if ($files.Count -gt 0) {
-                foreach ($file in $files) {
-                    Write-Log "⬆️ Uploading $($file.Name) to Nexus." -ForegroundColor Yellow
-                    $uploadUrl = "$nexusUrl/repository/$repoName/$($file.Name)"
-                    
-                    $curlOutput = curl.exe --silent --show-error --fail -u "admin:$nexusPass" -T "$($file.FullName)" "$uploadUrl" 2>&1
-                    
-                    if ($LASTEXITCODE -eq 0) {
-                        Write-Log "✅ Successfully uploaded $($file.Name)." -ForegroundColor Green
-                    } else {
-                        Write-Log "⚠️ Failed to upload $($file.Name). Error details: $curlOutput" -ForegroundColor Red
-                    }
+    if (-not $authFailed -and (Test-Path $binFolder)) {
+        $files = Get-ChildItem -Path $binFolder -File
+        if ($files.Count -gt 0) {
+            foreach ($file in $files) {
+                Write-Log "⬆️ Uploading $($file.Name) to Nexus..." -ForegroundColor Yellow
+                $uploadUrl = "$nexusUrl/repository/$repoName/$($file.Name)"
+                $curlOutput = curl.exe --silent --show-error --fail -u "admin:$nexusPass" -T "$($file.FullName)" "$uploadUrl" 2>&1
+                if ($LASTEXITCODE -eq 0) {
+                    Write-Log "✅ Uploaded $($file.Name)." -ForegroundColor Green
+                } else {
+                    Write-Log "⚠️ Failed to upload $($file.Name): $curlOutput" -ForegroundColor Red
                 }
-            } else {
-                Write-Log "⚠️ Folder $binFolder is empty." -ForegroundColor Yellow
             }
         } else {
-            Write-Log "⚠️ Folder $binFolder not found." -ForegroundColor Yellow
+            Write-Log "⚠️ Folder $binFolder is empty." -ForegroundColor Yellow
         }
     }
 }
 $ProgressPreference = 'Continue'
 
+
+# ==============================================================================
+# FINAL ACCESS DASHBOARD
+# ==============================================================================
 Write-Host "`n==========================================================" -ForegroundColor Green
-Write-Host "Done! Setup successful." -ForegroundColor Green
+Write-Host "Done! All components successfully installed & configured." -ForegroundColor Green
 Write-Host "==========================================================" -ForegroundColor Green
 Write-Host "ACCESS YOUR SERVICES:"
 Write-Log " - Jenkins    : http://localhost:8080"
 Write-Log "   InitAdmin  : $jenkinsPass (Login: jenkins / jenkins)" -ForegroundColor Green
-Write-Log " - Nexus 3    : http://localhost:8082 (User: admin, Pass: $nexusPass)" -ForegroundColor Green
-# Write-Log " - SonarQube  : http://localhost:9002 (User: admin, Pass: admin) -> Please change your password after logging in!" -ForegroundColor Green
 Write-Log " - Argo CD    : http://argocd.local (User: admin, Pass: $argocdPass)" -ForegroundColor Green
-Write-Log " - Artemis    : http://localhost:8161 (User: $($env:ARTEMIS_USER), Pass: $($env:ARTEMIS_PASSWORD))" -ForegroundColor Green
-Write-Log " - Grafana    : http://grafana.local (User: admin, Pass: $grafanaPass)" -ForegroundColor Green
-Write-Log " - Prometheus : http://localhost:9090" -ForegroundColor Green
-Write-Log " - PGAdmin    : http://localhost:8081 (User: $($env:PGADMIN_EMAIL), Pass: $($env:PGADMIN_PASSWORD))"
+Write-Log " - Nexus 3    : http://localhost:8082 (User: admin, Pass: $nexusPass)" -ForegroundColor Green
+Write-Log " - SonarQube  : http://localhost:9002 (User: admin, Pass: admin)" -ForegroundColor Green
 Write-Log " - PostgreSQL : localhost:5432 (User: postgres, Pass: $($env:POSTGRES_PASSWORD))"
-Write-Log " - MinIO      : http://localhost:9001 (User: $($env:MINIO_ROOT_USER), Pass: $($env:MINIO_ROOT_PASSWORD))" -ForegroundColor Green
-Write-Log " - Vault      : http://localhost:8200 (Token: $VaultRootToken)" -ForegroundColor Green
+Write-Log " - PGAdmin    : http://localhost:8081 (User: $($env:PGADMIN_EMAIL), Pass: $($env:PGADMIN_PASSWORD))"
+Write-Log " - Vault      : http://localhost:8200 (Token: $vaultRootToken)" -ForegroundColor Green
 Write-Host "==========================================================" -ForegroundColor Green
