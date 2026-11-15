@@ -153,6 +153,13 @@ git commit -m "fix(security): sanitize exposed secrets"
 git push
 ```
 
+🔑 **Troubleshooting Windows Git Credential Conflicts**
+If you encounter an issue where a commit or push incorrectly uses a teammate's account credentials due to stale cache in the Windows Credential Manager, clear and reset your credentials by following these steps:
+```bash
+cmdkey /delete:LegacyGeneric:target=git:https://github.com
+echo "ghp_TOKEN_BARU_ANDA" | gh auth login --with-token
+```
+
 ---
 
 ## 🚀 Step-by-Step Installation
@@ -216,7 +223,7 @@ To access services routed through the Nginx Ingress Controller (like Grafana and
 Regardless of the installation method (Vagrant or Host Docker), services are mapped to your `localhost` or local domains. Upon successful execution, credentials are automatically injected into **HashiCorp Vault KV v2** (`secret/`):
 
 - **Jenkins:** `http://localhost:8080` (User: `jenkins`, Pass: `jenkins`)
-  - Configured Credentials Store: `dockerhub-creds`, `github-creds`, `argocd-creds`.
+  - Configured Credentials Store: with Username Password = `dockerhub-creds`, `github-creds`, `argocd-creds`, with Secret Text = `telegram-bot-token`,`sonar-token`.
 - **SonarQube:** `http://localhost:9000` (User: `admin`, Pass: `admin`)
 - **Nexus 3:** `http://localhost:8082` (User: `admin`, Pass: `P4ssw0rdNexus`)
 - **ArgoCD Dashboard:** `http://argocd.local` (User: `admin`, Pass: `P4ssw0rdArgoCD`)

@@ -35,7 +35,13 @@ pipeline {
                     def targetEnv = env.TARGET_ENV
                     def targetBranch = (targetEnv == 'prod') ? 'main' : (targetEnv == 'staging') ? 'staging' : 'dev'
                     
-                    cleanWs()
+                    try {
+                        cleanWs(deleteDirs: true, disableDeferredWipeout: true)
+                    } catch (Exception e) {
+                        echo "⚠️ Warning: cleanWs failed, forcing cleanup..."
+                        sh 'rm -rf * .git || true'
+                    }
+
                     checkout([
                         $class: 'GitSCM',
                         branches: [[name: "*/${targetBranch}"]],
@@ -78,29 +84,43 @@ pipeline {
             }
         }
 
-        // 🔥 SonarQube SAST Analysis Stage
+        // 🔥 SonarQube SAST Analysis via Docker Scanner CLI
         stage('2.5. Security - SonarQube SAST') {
             when { environment name: 'TARGET_ENV', value: 'dev' }
             steps {
                 script {
-                    echo "🔍 Menjalankan analisis SonarQube SAST..."
-                    withSonarQubeEnv('sonar-server') { // Pastikan nama server SonarQube sesuai di Jenkins Global Config
-                        sh 'sonar-scanner'
+                    echo "🔍 Menjalankan analisis SonarQube SAST via Docker..."
+                    withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
+                        sh """
+                            docker run --rm \
+                              -v \${WORKSPACE}/src:/usr/src \
+                              -w /usr/src \
+                              sonarsource/sonar-scanner-cli \
+                              -Dsonar.projectKey=node-app-backend \
+                              -Dsonar.sources=. \
+                              -Dsonar.host.url=http://host.docker.internal:9002 \
+                              -Dsonar.login=\${SONAR_TOKEN}
+                        """
                     }
                 }
             }
         }
 
-        // 🔥 SonarQube Quality Gate Check Stage
+        // 🔥 SonarQube Quality Gate Check via REST API Curl
         stage('2.6. Security - SonarQube Quality Gate') {
             when { environment name: 'TARGET_ENV', value: 'dev' }
             steps {
                 script {
                     echo "⏳ Menunggu hasil Quality Gate dari SonarQube..."
-                    timeout(time: 5, unit: 'MINUTES') {
-                        def qg = waitForQualityGate()
-                        if (qg.status != 'OK') {
-                            error "❌ Pipeline dibatalkan: SonarQube Quality Gate berstatus ${qg.status} (Ditemukan celah/bugs yang melanggar aturan)."
+                    withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
+                        // Polling status Quality Gate ke API SonarQube
+                        def response = sh(script: """
+                            curl -s -u \${SONAR_TOKEN}: "http://host.docker.internal:9002/api/qualitygates/project_status?projectKey=node-app-backend"
+                        """, returnStdout: true).trim()
+                        
+                        echo "API Response: ${response}"
+                        if (!response.contains('"status":"OK"')) {
+                            error "❌ Pipeline dibatalkan: SonarQube Quality Gate gagal atau berstatus non-OK!"
                         } else {
                             echo "✅ SonarQube Quality Gate Lolos!"
                         }
@@ -190,7 +210,40 @@ pipeline {
     
     post {
         always {
-            cleanWs(deleteDirs: true, disableDeferredWipeout: true)
+            script {
+                try {
+                    echo "📱 Sending notification to Telegram..."
+                    def buildStatus = currentBuild.currentResult ?: 'SUCCESS'
+                    def statusEmoji = (buildStatus == 'SUCCESS') ? '✅' : '❌'
+                    def targetEnv = env.TARGET_ENV ?: 'N/A'
+                    def buildUrl = "${env.BUILD_URL}"
+                    
+                    def commitInfo = env.GIT_COMMIT_MSG ? "\n📌 <b>Commit:</b> ${env.GIT_COMMIT_MSG}\n👤 <b>Author:</b> ${env.GIT_COMMIT_AUTHOR}" : ""
+                    
+                    def tgMessage = "===============================\n" +
+                                    "🚀 <b>Jenkins Pipeline Update</b>\n" +
+                                    "===============================\n" +
+                                    "📌 <b>Project:</b> ${env.JOB_NAME}\n" +
+                                    "🏷️ <b>Build No:</b> #${env.BUILD_NUMBER}\n" +
+                                    "🌿 <b>Environment:</b> ${targetEnv}${commitInfo}\n" +
+                                    "${statusEmoji} <b>Status:</b> ${buildStatus}\n" +
+                                    "===============================\n" +
+                                    "📝 <a href='${buildUrl}'>Log Build = ${buildUrl}</a>"
+
+                    withCredentials([string(credentialsId: 'telegram-bot-token', variable: 'TELEGRAM_TOKEN')]) {
+                        def chatId = "-1003786747095"
+                        sh """
+                            curl -s -X POST "https://api.telegram.org/bot\${TELEGRAM_TOKEN}/sendMessage" \
+                            -d chat_id="${chatId}" \
+                            -d parse_mode="HTML" \
+                            --data-urlencode text="${tgMessage}"
+                        """
+                    }
+                    echo "📨 Telegram notification successfully sent."
+                } catch (Exception e) {
+                    echo "⚠️ Failed to send Telegram notification: ${e.getMessage()}"
+                }
+            }
         }
     }
 }
