@@ -270,22 +270,8 @@ foreach ($path in $secretsMap.Keys) {
 Write-Log "✅ All credentials successfully exported to Vault." -ForegroundColor Green
 
 
-# ==============================================================================
-# AUTOMATED SONARQUBE CONFIGURATION & TOKEN GENERATION
-# ==============================================================================
-
-function Write-Log {
-    param (
-        [Parameter(Mandatory=$true)]
-        [string]$Message,
-        [System.ConsoleColor]$ForegroundColor = [System.ConsoleColor]::White
-    )
-    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    Write-Host "[$timestamp] $Message" -ForegroundColor $ForegroundColor
-}
-
 Write-Host "==========================================================" -ForegroundColor Cyan
-Write-Host "PHASE: AUTOMATED SONARQUBE CONFIGURATION & TOKEN GENERATION" -ForegroundColor Yellow
+Write-Host "PHASE 6: AUTOMATED SONARQUBE CONFIGURATION & TOKEN GENERATION" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
 
 $sonarUrl = "http://localhost:9002"
@@ -360,19 +346,24 @@ try {
     Write-Log "[INFO] The SonarQube project may already exist; continuing..." -ForegroundColor Yellow
 }
 
-# 3. Generate a Unique User Token for Jenkins pipeline integration
-$tokenName = "jenkins-token-" + (Get-Date -Format "yyyyMMdd-HHmmss")
+# 3. Use a static token name or reuse existing token for Jenkins pipeline integration
+$tokenName = "jenkins-token-fixed"
 try {
-    Write-Log "Generating fresh SonarQube token ($tokenName)..." -ForegroundColor Cyan
+    Write-Log "Revoking old tokens and generating a fresh static SonarQube token ($tokenName)..." -ForegroundColor Cyan
+    # Revoke old token if exists (ignore error if not exists)
+    try {
+        Invoke-RestMethod -Uri "$sonarUrl/api/user_tokens/revoke?name=$tokenName" -Method Post -Headers $headers -ErrorAction SilentlyContinue | Out-Null
+    } catch {}
+
+    # Generate new token with static name
     $tokenResponse = Invoke-RestMethod -Uri "$sonarUrl/api/user_tokens/generate?name=$tokenName" -Method Post -Headers $headers -ErrorAction Stop
     $sonarToken = $tokenResponse.token
-    Write-Log "[SUCCESS] SonarQube token successfully generated!" -ForegroundColor Green
+    Write-Log "[SUCCESS] Static SonarQube token successfully generated!" -ForegroundColor Green
 
     # 4. Safely save the token & password to the root .env file
     $envFilePath = Join-Path $PSScriptRoot "..\..\.env"
     $envContent = if (Test-Path $envFilePath) { Get-Content $envFilePath -Raw } else { "" }
 
-    # Update or append SONAR_TOKEN
     if ([string]::IsNullOrWhiteSpace($envContent)) {
         $envContent = "SONAR_TOKEN=$sonarToken`nSONAR_PASSWORD=$customPassword"
     } else {
@@ -397,7 +388,7 @@ try {
 
 
 Write-Host "`n==========================================================" -ForegroundColor Cyan
-Write-Host "PHASE 6: NEXUS REPOSITORY & BINARY UPLOADS" -ForegroundColor Yellow
+Write-Host "PHASE 7: NEXUS REPOSITORY & BINARY UPLOADS" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
 $ProgressPreference = 'SilentlyContinue'
 $binFolder = "$env:LOCAL_PROJECT_PATH\bin"

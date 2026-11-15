@@ -372,19 +372,24 @@ try {
     Write-Log "[INFO] The SonarQube project may already exist; continuing..." -ForegroundColor Yellow
 }
 
-# 3. Generate a Unique User Token for Jenkins pipeline integration
-$tokenName = "jenkins-token-" + (Get-Date -Format "yyyyMMdd-HHmmss")
+# 3. Use a static token name or reuse existing token for Jenkins pipeline integration
+$tokenName = "jenkins-token-fixed"
 try {
-    Write-Log "Generating fresh SonarQube token ($tokenName)..." -ForegroundColor Cyan
+    Write-Log "Revoking old tokens and generating a fresh static SonarQube token ($tokenName)..." -ForegroundColor Cyan
+    # Revoke old token if exists (ignore error if not exists)
+    try {
+        Invoke-RestMethod -Uri "$sonarUrl/api/user_tokens/revoke?name=$tokenName" -Method Post -Headers $headers -ErrorAction SilentlyContinue | Out-Null
+    } catch {}
+
+    # Generate new token with static name
     $tokenResponse = Invoke-RestMethod -Uri "$sonarUrl/api/user_tokens/generate?name=$tokenName" -Method Post -Headers $headers -ErrorAction Stop
     $sonarToken = $tokenResponse.token
-    Write-Log "[SUCCESS] SonarQube token successfully generated!" -ForegroundColor Green
+    Write-Log "[SUCCESS] Static SonarQube token successfully generated!" -ForegroundColor Green
 
     # 4. Safely save the token & password to the root .env file
     $envFilePath = Join-Path $PSScriptRoot "..\..\.env"
     $envContent = if (Test-Path $envFilePath) { Get-Content $envFilePath -Raw } else { "" }
 
-    # Update or append SONAR_TOKEN
     if ([string]::IsNullOrWhiteSpace($envContent)) {
         $envContent = "SONAR_TOKEN=$sonarToken`nSONAR_PASSWORD=$customPassword"
     } else {
