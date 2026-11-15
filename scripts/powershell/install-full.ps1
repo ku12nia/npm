@@ -12,10 +12,9 @@ function Write-Log {
 }
 
 
+Write-Host "`n==========================================================" -ForegroundColor Cyan
+Write-Host "PHASE 0: PREREQUISITES, BINARY AUTO-COPY & ENVIRONMENT SETUP" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
-Write-Host "PHASE 0: PREREQUISITES & ENVIRONMENT SETUP" -ForegroundColor Yellow
-Write-Host "==========================================================" -ForegroundColor Cyan
-
 if (Test-Path ".env") {
     Write-Log "Loading environment variables from .env file..." -ForegroundColor Cyan
     Get-Content ".env" | ForEach-Object {
@@ -30,34 +29,73 @@ if (Test-Path ".env") {
     Write-Log "⚠️ Warning: .env file not found! Please create it before proceeding." -ForegroundColor Red
     exit 1
 }
+
 $WorkspaceName = if ($env:WORKSPACE_NAME) { $env:WORKSPACE_NAME } else { "npm-cicd" }
-$WorkspaceDir  = "/var/jenkins_home/workspace/$WorkspaceName"
-# Check & Install Helm CLI
-if (-not (Get-Command helm -ErrorAction SilentlyContinue)) {
-    Write-Log "Helm is not detected! Attempting to install Helm using winget..." -ForegroundColor Yellow
-    try {
-        winget install Helm.Helm --accept-source-agreements --accept-package-agreements | Out-Null
-        $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
-        Write-Log "✅ Helm successfully installed." -ForegroundColor Green
-    } catch {
-        Write-Log "❌ Failed to install Helm automatically." -ForegroundColor Red
-        exit 1
-    }
+$WorkspaceDir = "/var/jenkins_home/workspace/$WorkspaceName"
+
+# --- AUTOMATED BINARY DIRECTORY CHECK & FALLBACK RESOLUTION ---
+$parentBinPath = Join-Path $PSScriptRoot "..\..\bin"
+$siblingBinPath = "C:\Users\evoel\Downloads\labs_dedi\bin"
+
+if (Test-Path $parentBinPath) {
+    $binFolderPath = $parentBinPath
+    Write-Log "📁 Using local project bin folder at: $binFolderPath" -ForegroundColor Cyan
+} elseif (Test-Path $siblingBinPath) {
+    $binFolderPath = $siblingBinPath
+    Write-Log "📁 Using shared lab bin folder at: $binFolderPath" -ForegroundColor Cyan
 } else {
-    Write-Log "✅ Helm is already installed." -ForegroundColor Green
+    Write-Log "📁 Folder 'bin/' not found. Creating directory automatically..." -ForegroundColor Yellow
+    $binFolderPath = $parentBinPath
+    New-Item -ItemType Directory -Force -Path $binFolderPath | Out-Null
 }
-# Check & Install Terraform CLI
-if (-not (Get-Command terraform -ErrorAction SilentlyContinue)) {
-    Write-Log "Terraform is not detected! Attempting to install Terraform using winget..." -ForegroundColor Yellow
-    try {
-        winget install Hashicorp.Terraform --accept-source-agreements --accept-package-agreements | Out-Null
-        $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
-        Write-Log "✅ Terraform installed successfully." -ForegroundColor Green
-    } catch {
-        Write-Log "⚠️ Failed to install Terraform automatically. Please install it manually." -ForegroundColor Yellow
+$requiredBinaries = @(
+    "docker-24.0.9.tgz",
+    "buildx-v0.14.0.linux-amd64",
+    "kubectl",
+    "argocd-linux-amd64",
+    "sonar-scanner-cli-5.0.1.3006-linux.zip",
+    "terraform_1.9.0_linux_amd64.zip"
+)
+$missingFiles = @()
+foreach ($binFile in $requiredBinaries) {
+    $filePath = Join-Path $binFolderPath $binFile
+    if (-not (Test-Path $filePath)) {
+        $missingFiles += $binFile
+    }
+}
+if ($missingFiles.Count -gt 0) {
+    Write-Log "⚠️ Warning: The following binaries are missing inside the target directory:" -ForegroundColor Yellow
+    foreach ($miss in $missingFiles) {
+        Write-Log "   - $miss" -ForegroundColor DarkYellow
+    }
+    # Auto-copy fallback source from Downloads if available
+    $fallbackSource = "C:\Users\evoel\Downloads"
+    foreach ($miss in $missingFiles) {
+        $possibleSource = Join-Path $fallbackSource $miss
+        if (Test-Path $possibleSource) {
+            Write-Log "🔄 Auto-copying $miss from $possibleSource to $binFolderPath..." -ForegroundColor Cyan
+            Copy-Item -Path $possibleSource -Destination (Join-Path $binFolderPath $miss) -Force
+        }
+    }
+    # Re-verify after auto-copy attempt
+    $stillMissing = @()
+    foreach ($binFile in $requiredBinaries) {
+        if (-not (Test-Path (Join-Path $binFolderPath $binFile))) {
+            $stillMissing += $binFile
+        }
+    }
+    if ($stillMissing.Count -gt 0) {
+        Write-Log "❌ Error: Some required binaries are still missing and could not be resolved automatically:" -ForegroundColor Red
+        foreach ($miss in $stillMissing) {
+            Write-Log "   - $miss" -ForegroundColor Red
+        }
+        Write-Log "💡 Please place these files into the 'bin/' folder manually, and the script will handle the rest." -ForegroundColor Yellow
+        exit 1
+    } else {
+        Write-Log "✅ All missing binaries were successfully auto-copied and verified!" -ForegroundColor Green
     }
 } else {
-    Write-Log "✅ Terraform is already installed on the host." -ForegroundColor Green
+    Write-Log "✅ All required binaries are complete and verified." -ForegroundColor Green
 }
 
 

@@ -371,6 +371,7 @@ sudo bash /workspace/scripts/bash/teardown.sh
 ### For Windows PowerShell Users:
 To teardown Kubernetes deployments and Docker containers from the host OS:
 ```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 cd scripts\powershell
 .\uninstall.ps1
 ```

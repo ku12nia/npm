@@ -13,7 +13,7 @@ function Write-Log {
 
 
 Write-Host "`n==========================================================" -ForegroundColor Cyan
-Write-Host "PHASE 0: PREREQUISITES & ENVIRONMENT SETUP" -ForegroundColor Yellow
+Write-Host "PHASE 0: PREREQUISITES, BINARY AUTO-COPY & ENVIRONMENT SETUP" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
 if (Test-Path ".env") {
     Write-Log "Loading environment variables from .env file..." -ForegroundColor Cyan
@@ -29,45 +29,73 @@ if (Test-Path ".env") {
     Write-Log "⚠️ Warning: .env file not found! Please create it before proceeding." -ForegroundColor Red
     exit 1
 }
+
 $WorkspaceName = if ($env:WORKSPACE_NAME) { $env:WORKSPACE_NAME } else { "npm-cicd" }
 $WorkspaceDir = "/var/jenkins_home/workspace/$WorkspaceName"
 
-Write-Host "Check & Install Helm CLI" -ForegroundColor Yellow
-if (-not (Get-Command helm -ErrorAction SilentlyContinue)) {
-    Write-Log "Helm is not detected! Attempting to install Helm using winget..." -ForegroundColor Yellow
-    try {
-        winget install Helm.Helm --accept-source-agreements --accept-package-agreements | Out-Null
-        $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
-        Write-Log "✅ Helm successfully installed." -ForegroundColor Green
-    } catch {
-        Write-Log "❌ Failed to install Helm automatically." -ForegroundColor Red
+# --- AUTOMATED BINARY DIRECTORY CHECK & FALLBACK RESOLUTION ---
+$parentBinPath = Join-Path $PSScriptRoot "..\..\bin"
+$siblingBinPath = "C:\Users\evoel\Downloads\labs_dedi\bin"
+
+if (Test-Path $parentBinPath) {
+    $binFolderPath = $parentBinPath
+    Write-Log "📁 Using local project bin folder at: $binFolderPath" -ForegroundColor Cyan
+} elseif (Test-Path $siblingBinPath) {
+    $binFolderPath = $siblingBinPath
+    Write-Log "📁 Using shared lab bin folder at: $binFolderPath" -ForegroundColor Cyan
+} else {
+    Write-Log "📁 Folder 'bin/' not found. Creating directory automatically..." -ForegroundColor Yellow
+    $binFolderPath = $parentBinPath
+    New-Item -ItemType Directory -Force -Path $binFolderPath | Out-Null
+}
+$requiredBinaries = @(
+    "docker-24.0.9.tgz",
+    "buildx-v0.14.0.linux-amd64",
+    "kubectl",
+    "argocd-linux-amd64",
+    "sonar-scanner-cli-5.0.1.3006-linux.zip",
+    "terraform_1.9.0_linux_amd64.zip"
+)
+$missingFiles = @()
+foreach ($binFile in $requiredBinaries) {
+    $filePath = Join-Path $binFolderPath $binFile
+    if (-not (Test-Path $filePath)) {
+        $missingFiles += $binFile
+    }
+}
+if ($missingFiles.Count -gt 0) {
+    Write-Log "⚠️ Warning: The following binaries are missing inside the target directory:" -ForegroundColor Yellow
+    foreach ($miss in $missingFiles) {
+        Write-Log "   - $miss" -ForegroundColor DarkYellow
+    }
+    # Auto-copy fallback source from Downloads if available
+    $fallbackSource = "C:\Users\evoel\Downloads"
+    foreach ($miss in $missingFiles) {
+        $possibleSource = Join-Path $fallbackSource $miss
+        if (Test-Path $possibleSource) {
+            Write-Log "🔄 Auto-copying $miss from $possibleSource to $binFolderPath..." -ForegroundColor Cyan
+            Copy-Item -Path $possibleSource -Destination (Join-Path $binFolderPath $miss) -Force
+        }
+    }
+    # Re-verify after auto-copy attempt
+    $stillMissing = @()
+    foreach ($binFile in $requiredBinaries) {
+        if (-not (Test-Path (Join-Path $binFolderPath $binFile))) {
+            $stillMissing += $binFile
+        }
+    }
+    if ($stillMissing.Count -gt 0) {
+        Write-Log "❌ Error: Some required binaries are still missing and could not be resolved automatically:" -ForegroundColor Red
+        foreach ($miss in $stillMissing) {
+            Write-Log "   - $miss" -ForegroundColor Red
+        }
+        Write-Log "💡 Please place these files into the 'bin/' folder manually, and the script will handle the rest." -ForegroundColor Yellow
         exit 1
+    } else {
+        Write-Log "✅ All missing binaries were successfully auto-copied and verified!" -ForegroundColor Green
     }
 } else {
-    Write-Log "✅ Helm is already installed." -ForegroundColor Green
-}
-
-Write-Host "Check & Install Terraform CLI" -ForegroundColor Yellow
-if (-not (Get-Command terraform -ErrorAction SilentlyContinue)) {
-    Write-Log "Terraform tidak ditemukan! Mencoba menginstal via winget..." -ForegroundColor Yellow
-    try {
-        winget install Hashicorp.Terraform --accept-source-agreements --accept-package-agreements | Out-Null
-        $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
-        Write-Log "✅ Terraform berhasil diinstal." -ForegroundColor Green
-    } catch {
-        Write-Log "⚠️ Gagal menginstal Terraform secara otomatis. Harap instal manual." -ForegroundColor Yellow
-    }
-} else {
-    Write-Log "✅ Terraform sudah terpasang." -ForegroundColor Green
-}
-
-Write-Log "Launching Docker Compose stack from config/ folder..." -ForegroundColor Cyan
-try {
-    Push-Location "config"
-    docker compose up -d --build --force-recreate
-}
-finally {
-    Pop-Location
+    Write-Log "✅ All required binaries are complete and verified." -ForegroundColor Green
 }
 
 
@@ -86,21 +114,19 @@ if (-not [string]::IsNullOrWhiteSpace($env:DOCKER_USER) -and -not [string]::IsNu
 } else {
     Write-Log "⚠️ DOCKER_USER/DOCKER_PASS not found, skipping explicit login..." -ForegroundColor Yellow
 }
+
 Write-Log "Fixing volume permissions for Jenkins and Nexus..." -ForegroundColor Cyan
 docker run --rm -v npm_jenkins_home:/var/jenkins_home alpine chown -R 1000:1000 /var/jenkins_home 2>$null
 docker run --rm -v nexus_data:/nexus-data alpine chown -R 200:200 /nexus-data 2>$null
-Write-Log "Launching Docker Compose stack from config/ folder..." -ForegroundColor Cyan
-try {
-    Push-Location "config"
-    docker compose up -d --build --force-recreate
-}
-finally {
-    Pop-Location
-}
-# Write-Log "Launching Docker Compose stack..." -ForegroundColor Cyan
-# docker compose -f config/docker-compose.yml --project-directory config up -d --build --force-recreate
+
+Write-Log "Launching Docker Compose stack from root context..." -ForegroundColor Cyan
+docker compose -f config/docker-compose.yml build --no-cache jenkins
+# docker compose -f config/docker-compose.yml build --force-recreate jenkins
+docker compose -f config/docker-compose.yml up -d
+
 Write-Log "Waiting for Docker containers to initialize (20s)..." -ForegroundColor Magenta
 Start-Sleep -Seconds 20
+
 # Extract Jenkins Initial Password
 $jenkinsId = docker ps -q --filter "name=jenkins"
 $jenkinsPass = ""
@@ -195,7 +221,6 @@ while ($true) {
     }
     Start-Sleep -Seconds 3
 }
-# Allow a brief pause so that the HTTP server inside the container is ready to accept connections
 Start-Sleep -Seconds 5
 Write-Log "Checking Vault status..." -ForegroundColor Cyan
 $vaultStatusJson = kubectl exec -n vault vault-0 -- vault status -format=json 2>$null
@@ -218,7 +243,6 @@ if (-not (Test-Path $keyFile)) {
 $vaultKeys = Get-Content $keyFile | ConvertFrom-Json
 $unsealKey = $vaultKeys.unseal_keys_b64[0]
 $vaultRootToken = $vaultKeys.root_token
-# Check the Vault status (whether it is sealed/locked). If it is, perform an automatic unseal; otherwise, skip.
 $vaultStatusJson = kubectl exec -n vault vault-0 -- vault status -format=json 2>$null
 $vaultStatus = $vaultStatusJson | ConvertFrom-Json
 if ($vaultStatus.sealed) {
@@ -228,7 +252,7 @@ if ($vaultStatus.sealed) {
 } else {
     Write-Log "🔓 Vault is already unsealed." -ForegroundColor Green
 }
-# Enable KV v2 Secrets Engine
+
 Write-Log "Logging into Vault and enabling KV v2 secrets engine..." -ForegroundColor Cyan
 kubectl exec -n vault vault-0 -- vault login $vaultRootToken | Out-Null
 $secretsListJson = kubectl exec -n vault vault-0 -- vault secrets list -format=json 2>$null
@@ -239,7 +263,7 @@ if (-not $secretsList.'secret/') {
 } else {
     Write-Log "✅ Path 'secret/' already active." -ForegroundColor Green
 }
-# Populate Secrets Map (Fixing how arguments are passed to Vault)
+
 Write-Log "Storing service credentials into Vault..." -ForegroundColor Yellow
 $secretsMap = @{
     "secret/database/postgres"  = @{ username = "postgres"; password = "$env:POSTGRES_PASSWORD" }
@@ -302,13 +326,11 @@ if (-not $isUp) {
     exit 1
 }
 
-# 1. Handle Authentication & Automatic Password Update to Kul!kS0narLocal
 $authString = "{0}:{1}" -f $username, $customPassword
 $base64AuthInfo = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes($authString))
 $headers = @{ Authorization = "Basic $base64AuthInfo" }
 
 try {
-    # Test if custom password already works
     Invoke-RestMethod -Uri "$sonarUrl/api/authentication/validate" -Method Get -Headers $headers -ErrorAction Stop | Out-Null
     Write-Log "[SUCCESS] Authenticated successfully with custom password." -ForegroundColor Green
 } catch {
@@ -319,7 +341,6 @@ try {
     $defaultHeaders = @{ Authorization = "Basic $defaultBase64" }
 
     try {
-        # Change default password to Kul!kS0narLocal via SonarQube API
         $body = @{
             login            = "admin"
             previousPassword = "admin"
@@ -337,7 +358,6 @@ $projectKey = "node-app-backend"
 $projectName = "Node JS Backend App"
 $encodedName = [uri]::EscapeDataString($projectName)
 
-# 2. Automatically create the SonarQube project
 try {
     Write-Log "Creating SonarQube project: $projectKey..." -ForegroundColor Cyan
     Invoke-RestMethod -Uri "$sonarUrl/api/projects/create?project=$projectKey&name=$encodedName" -Method Post -Headers $headers -ContentType "application/x-www-form-urlencoded" -ErrorAction Stop | Out-Null
@@ -346,21 +366,17 @@ try {
     Write-Log "[INFO] The SonarQube project may already exist; continuing..." -ForegroundColor Yellow
 }
 
-# 3. Use a static token name or reuse existing token for Jenkins pipeline integration
 $tokenName = "jenkins-token-fixed"
 try {
     Write-Log "Revoking old tokens and generating a fresh static SonarQube token ($tokenName)..." -ForegroundColor Cyan
-    # Revoke old token if exists (ignore error if not exists)
     try {
         Invoke-RestMethod -Uri "$sonarUrl/api/user_tokens/revoke?name=$tokenName" -Method Post -Headers $headers -ErrorAction SilentlyContinue | Out-Null
     } catch {}
 
-    # Generate new token with static name
     $tokenResponse = Invoke-RestMethod -Uri "$sonarUrl/api/user_tokens/generate?name=$tokenName" -Method Post -Headers $headers -ErrorAction Stop
     $sonarToken = $tokenResponse.token
     Write-Log "[SUCCESS] Static SonarQube token successfully generated!" -ForegroundColor Green
 
-    # 4. Safely save the token & password to the root .env file
     $envFilePath = Join-Path $PSScriptRoot "..\..\.env"
     $envContent = if (Test-Path $envFilePath) { Get-Content $envFilePath -Raw } else { "" }
 
@@ -391,7 +407,6 @@ Write-Host "`n==========================================================" -Foreg
 Write-Host "PHASE 7: NEXUS REPOSITORY & BINARY UPLOADS" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
 $ProgressPreference = 'SilentlyContinue'
-$binFolder = "$env:LOCAL_PROJECT_PATH\bin"
 $nexusUrl = "http://127.0.0.1:8082"
 $repoName = "raw-binaries"
 $nexusPass = $env:NEXUS_PASSWORD
@@ -425,13 +440,12 @@ if ([string]::IsNullOrWhiteSpace($nexusPass)) {
             Write-Log "❌ Authentication Failed! Invalid Nexus password." -ForegroundColor Red
             $authFailed = $true
         } else {
-            # Status 400/422/409 berarti repository sudah ada sebelumnya, aman untuk dilanjutkan
             Write-Log "✅ Repository '$repoName' already exists. Proceeding to uploads..." -ForegroundColor Green
         }
     }
 
-    if (-not $authFailed -and (Test-Path $binFolder)) {
-        $files = Get-ChildItem -Path $binFolder -File
+    if (-not $authFailed -and (Test-Path $binFolderPath)) {
+        $files = Get-ChildItem -Path $binFolderPath -File
         if ($files.Count -gt 0) {
             foreach ($file in $files) {
                 Write-Log "⬆️ Uploading $($file.Name) to Nexus..." -ForegroundColor Yellow
@@ -444,7 +458,7 @@ if ([string]::IsNullOrWhiteSpace($nexusPass)) {
                 }
             }
         } else {
-            Write-Log "⚠️ Folder $binFolder is empty." -ForegroundColor Yellow
+            Write-Log "⚠️ Folder $binFolderPath is empty." -ForegroundColor Yellow
         }
     }
 }
@@ -455,12 +469,12 @@ Write-Host "`n==========================================================" -Foreg
 Write-Host "✅ Done! All components successfully installed & configured." -ForegroundColor Green
 Write-Host "==========================================================" -ForegroundColor Green
 Write-Host "ACCESS YOUR SERVICES:"
-Write-Log " - Jenkins    : http://localhost:8080"
-Write-Log "   InitAdmin  : $jenkinsPass (Login: jenkins / jenkins)" -ForegroundColor Green
-Write-Log " - Argo CD    : http://argocd.local (User: admin, Pass: $argocdPass)" -ForegroundColor Green
-Write-Log " - Nexus 3    : http://localhost:8082 (User: admin, Pass: $nexusPass)" -ForegroundColor Green
-Write-Log " - SonarQube  : http://localhost:9002 (User: admin, Pass: admin)" -ForegroundColor Green
-Write-Log " - PostgreSQL : localhost:5432 (User: postgres, Pass: $($env:POSTGRES_PASSWORD))"
-Write-Log " - PGAdmin    : http://localhost:8081 (User: $($env:PGADMIN_EMAIL), Pass: $($env:PGADMIN_PASSWORD))"
-Write-Log " - Vault      : http://localhost:8200 (Token: $vaultRootToken)" -ForegroundColor Green
+Write-Log " - Jenkins     : http://localhost:8080"
+Write-Log "   InitAdmin   : $jenkinsPass (Login: jenkins / jenkins)" -ForegroundColor Green
+Write-Log " - Argo CD     : http://argocd.local (User: admin, Pass: $argocdPass)" -ForegroundColor Green
+Write-Log " - Nexus 3     : http://localhost:8082 (User: admin, Pass: $nexusPass)" -ForegroundColor Green
+Write-Log " - SonarQube   : http://localhost:9002 (User: admin, Pass: admin)" -ForegroundColor Green
+Write-Log " - PostgreSQL  : localhost:5432 (User: postgres, Pass: $($env:POSTGRES_PASSWORD))"
+Write-Log " - PGAdmin     : http://localhost:8081 (User: $($env:PGADMIN_EMAIL), Pass: $($env:PGADMIN_PASSWORD))"
+Write-Log " - Vault       : http://localhost:8200 (Token: $vaultRootToken)" -ForegroundColor Green
 Write-Host "==========================================================" -ForegroundColor Green
