@@ -225,9 +225,16 @@ Regardless of the installation method (Vagrant or Host Docker), services are map
 - **Grafana:** `http://grafana.local` (User: `admin`, Password extracted dynamically from K8s secret)
 - **Prometheus:** `http://localhost:9090`
 - **ActiveMQ Artemis:** `http://localhost:8161` (User: `admin`, Pass: `artemisadmin`)
-- **pgAdmin:** `http://localhost:8081` (User: `dedimk.devops@gmail.com`, Pass: `pgadmin-local`)
+- **pgAdmin (Helm / Kubernetes):** `http://localhost:8081` (User: `dedimk.devops@gmail.com`, Pass: `pgadmin-local`)
 - **PostgreSQL:** `localhost:5432` (User: `postgres`, Pass: `pg-local`)
 - **MinIO:** `http://localhost:9001` (User: `admin`, Pass: `minioadmin`)
+
+---
+
+## 💡 Important Note: Remote Connection from Kubernetes pgAdmin to Docker PostgreSQL
+Because pgAdmin is deployed inside **Kubernetes (Helm)** and PostgreSQL runs on **Docker Desktop**, standard `localhost` or `127.0.0.1` configuration inside pgAdmin will result in a `Connection Refused` error. 
+
+* **The Fix:** When registering the PostgreSQL server inside the pgAdmin UI, use your active Host machine's local IPv4 address (e.g., `192.168.0.136` obtained via `ipconfig`) instead of `localhost`. Ensure Docker Desktop is running and port `5432` is correctly mapped.
 
 ---
 

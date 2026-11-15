@@ -270,6 +270,132 @@ foreach ($path in $secretsMap.Keys) {
 Write-Log "✅ All credentials successfully exported to Vault." -ForegroundColor Green
 
 
+# ==============================================================================
+# AUTOMATED SONARQUBE CONFIGURATION & TOKEN GENERATION
+# ==============================================================================
+
+function Write-Log {
+    param (
+        [Parameter(Mandatory=$true)]
+        [string]$Message,
+        [System.ConsoleColor]$ForegroundColor = [System.ConsoleColor]::White
+    )
+    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    Write-Host "[$timestamp] $Message" -ForegroundColor $ForegroundColor
+}
+
+Write-Host "==========================================================" -ForegroundColor Cyan
+Write-Host "PHASE: AUTOMATED SONARQUBE CONFIGURATION & TOKEN GENERATION" -ForegroundColor Yellow
+Write-Host "==========================================================" -ForegroundColor Cyan
+
+$sonarUrl = "http://localhost:9002"
+$username = "admin"
+$customPassword = "Kul!kS0narLocal"
+
+Write-Log "Waiting for SonarQube to be ready..." -ForegroundColor Yellow
+$maxRetries = 30
+$retryCount = 0
+$isUp = $false
+
+while (-not $isUp -and $retryCount -lt $maxRetries) {
+    try {
+        $response = Invoke-RestMethod -Uri "$sonarUrl/api/system/status" -Method Get -TimeoutSec 5
+        if ($response.status -eq "UP") {
+            $isUp = $true
+            Write-Log "[SUCCESS] SonarQube service is up and running!" -ForegroundColor Green
+        }
+    } catch {
+        Start-Sleep -Seconds 5
+        $retryCount++
+        Write-Log "Attempting to connect to SonarQube ($retryCount/$maxRetries)..." -ForegroundColor DarkGray
+    }
+}
+
+if (-not $isUp) {
+    Write-Log "[ERROR] SonarQube failed to respond in time." -ForegroundColor Red
+    exit 1
+}
+
+# 1. Handle Authentication & Automatic Password Update to Kul!kS0narLocal
+$authString = "{0}:{1}" -f $username, $customPassword
+$base64AuthInfo = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes($authString))
+$headers = @{ Authorization = "Basic $base64AuthInfo" }
+
+try {
+    # Test if custom password already works
+    Invoke-RestMethod -Uri "$sonarUrl/api/authentication/validate" -Method Get -Headers $headers -ErrorAction Stop | Out-Null
+    Write-Log "[SUCCESS] Authenticated successfully with custom password." -ForegroundColor Green
+} catch {
+    Write-Log "[INFO] Custom password not set yet. Trying default credentials (admin:admin)..." -ForegroundColor Yellow
+    
+    $defaultAuthString = "{0}:admin" -f $username
+    $defaultBase64 = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes($defaultAuthString))
+    $defaultHeaders = @{ Authorization = "Basic $defaultBase64" }
+
+    try {
+        # Change default password to Kul!kS0narLocal via SonarQube API
+        $body = @{
+            login            = "admin"
+            previousPassword = "admin"
+            password         = $customPassword
+        }
+        Invoke-RestMethod -Uri "$sonarUrl/api/users/change_password" -Method Post -Headers $defaultHeaders -Body $body -ContentType "application/x-www-form-urlencoded" -ErrorAction Stop | Out-Null
+        Write-Log "[SUCCESS] Admin password successfully updated to: $customPassword" -ForegroundColor Green
+    } catch {
+        Write-Log "[ERROR] Failed to update password: $_" -ForegroundColor Red
+        exit 1
+    }
+}
+
+$projectKey = "node-app-backend"
+$projectName = "Node JS Backend App"
+$encodedName = [uri]::EscapeDataString($projectName)
+
+# 2. Automatically create the SonarQube project
+try {
+    Write-Log "Creating SonarQube project: $projectKey..." -ForegroundColor Cyan
+    Invoke-RestMethod -Uri "$sonarUrl/api/projects/create?project=$projectKey&name=$encodedName" -Method Post -Headers $headers -ContentType "application/x-www-form-urlencoded" -ErrorAction Stop | Out-Null
+    Write-Log "[SUCCESS] SonarQube project successfully created!" -ForegroundColor Green
+} catch {
+    Write-Log "[INFO] The SonarQube project may already exist; continuing..." -ForegroundColor Yellow
+}
+
+# 3. Generate a Unique User Token for Jenkins pipeline integration
+$tokenName = "jenkins-token-" + (Get-Date -Format "yyyyMMdd-HHmmss")
+try {
+    Write-Log "Generating fresh SonarQube token ($tokenName)..." -ForegroundColor Cyan
+    $tokenResponse = Invoke-RestMethod -Uri "$sonarUrl/api/user_tokens/generate?name=$tokenName" -Method Post -Headers $headers -ErrorAction Stop
+    $sonarToken = $tokenResponse.token
+    Write-Log "[SUCCESS] SonarQube token successfully generated!" -ForegroundColor Green
+
+    # 4. Safely save the token & password to the root .env file
+    $envFilePath = Join-Path $PSScriptRoot "..\..\.env"
+    $envContent = if (Test-Path $envFilePath) { Get-Content $envFilePath -Raw } else { "" }
+
+    # Update or append SONAR_TOKEN
+    if ([string]::IsNullOrWhiteSpace($envContent)) {
+        $envContent = "SONAR_TOKEN=$sonarToken`nSONAR_PASSWORD=$customPassword"
+    } else {
+        if ($envContent -match "SONAR_TOKEN=") {
+            $envContent = $envContent -replace "SONAR_TOKEN=.*", "SONAR_TOKEN=$sonarToken"
+        } else {
+            $envContent = $envContent.TrimEnd() + "`nSONAR_TOKEN=$sonarToken"
+        }
+
+        if ($envContent -match "SONAR_PASSWORD=") {
+            $envContent = $envContent -replace "SONAR_PASSWORD=.*", "SONAR_PASSWORD=$customPassword"
+        } else {
+            $envContent = $envContent.TrimEnd() + "`nSONAR_PASSWORD=$customPassword"
+        }
+    }
+
+    Set-Content -Path $envFilePath -Value $envContent -Encoding utf8
+    Write-Log "[SUCCESS] SONAR_TOKEN and SONAR_PASSWORD successfully saved to .env file!" -ForegroundColor Green
+} catch {
+    Write-Log "[ERROR] Failed to generate SonarQube token: $_" -ForegroundColor Red
+}
+
+
 Write-Host "`n==========================================================" -ForegroundColor Cyan
 Write-Host "PHASE 6: NEXUS REPOSITORY & BINARY UPLOADS" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan

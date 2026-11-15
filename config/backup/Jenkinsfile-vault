@@ -1,21 +1,25 @@
 pipeline {
     agent any
-    // Parameters: Prompts the user to select the target environment (dev, staging, or prod), specify an IMAGE_TAG_TO_PROMOTE when deploying to upper environments, and indicate if the Docker Hub repository is private
+    
     parameters {
         choice(name: 'DEPLOY_ENV', choices: ['dev', 'staging', 'prod'], description: 'Select the target environment for deployment.')
-        string(name: 'IMAGE_TAG_TO_PROMOTE', defaultValue: '', description: 'Enter the Image Tag from the stable Dev/Staging environment. Leave blank if env = dev.')
-        booleanParam(name: 'IS_PRIVATE_REPO', defaultValue: false, description: 'Check this box if the Docker Hub repository is private.')
+        string(name: 'IMAGE_TAG_TO_PROMOTE', defaultValue: '', description: 'Enter the Image Tag from stable env. Leave blank if env = dev.')
+        booleanParam(name: 'IS_PRIVATE_REPO', defaultValue: false, description: 'Check if Docker Hub repo is private.')
     }
-    // Options: Uses buildDiscarder with logRotator to keep only the last 10 build logs, preventing the Jenkins server disk from filling up.
+    
     options {
         buildDiscarder(logRotator(numToKeepStr: '10'))
     }
-    // Integrates with the HashiCorp Vault Plugin to dynamically retrieve sensitive data (Docker Hub credentials, GitHub Personal Access Token, and ArgoCD credentials) at the start of the pipeline execution.
+    
+    triggers {
+        githubPush()
+    }
+
+    // Integrasi HashiCorp Vault
     environment {
-    // These secrets are safely mapped into temporary environment variables (such as $DOCKER_USER, $GH_TOKEN, etc.) only while the pipeline runs, avoiding plain-text exposure in Jenkins or configuration files.
         VAULT_SECRETS = vault(
             vaultUrl: 'http://host.docker.internal:8200',
-            vaultCredentialId: 'vault-token-id', // ID dari kredensial tipe 'Vault Token' di Jenkins
+            vaultCredentialId: 'vault-token-id',
             engineVersion: 2,
             vaultSecrets: [
                 [path: 'secret/jenkins/dockerhub', secretValues: [
@@ -33,71 +37,53 @@ pipeline {
             ]
         )
     }
-    
+
     stages {
-        // Stage 0. Setup Build Name: Formats the build number (padding it to two digits) and customizes the build display name in the Jenkins dashboard (e.g., #01 - dev).
-        stage('0. Setup Build Name') {
+        stage('0. Setup Build Name & Dynamic Environment') {
             steps {
                 script {
                     env.PADDED_BUILD_NUMBER = String.format("%02d", env.BUILD_NUMBER.toInteger())
-                    currentBuild.displayName = "#${env.PADDED_BUILD_NUMBER} - ${params.DEPLOY_ENV}"
+                    def buildCauses = currentBuild.getBuildCauses()
+                    def isWebhook = buildCauses.any { it._class?.contains('GitHubPushCause') || it._class?.contains('SCMTriggerCause') }
+                    
+                    env.TARGET_ENV = isWebhook ? 'dev' : params.DEPLOY_ENV
+                    currentBuild.displayName = "#${env.PADDED_BUILD_NUMBER} ${env.TARGET_ENV}"
                 }
             }
         }
-        // Stage 1. Checkout Code: Determines the target GitHub branch based on the deployment environment (main for production, or the respective environment name for dev/staging). It also supports a local directory mode if LOCAL_SRC_PATH is configured.
+
         stage('1. Checkout Code') {
             steps {
                 script {
-                    def targetBranch = (params.DEPLOY_ENV == 'prod') ? 'main' : params.DEPLOY_ENV
+                    def targetEnv = env.TARGET_ENV
+                    def targetBranch = (targetEnv == 'prod') ? 'main' : (targetEnv == 'staging') ? 'staging' : 'dev'
                     
-                    if (env.LOCAL_SRC_PATH) {
-                        echo "💻 Local Directory Mode Active!"
-                        if (!fileExists('Jenkinsfile')) {
-                            error("❌ Workspace is empty! Ensure the repo has been cloned into the Windows host folder.")
-                        } else {
-                            echo "✅ Local source code is ready to build."
-                        }
-                    } else {
-                        echo "🌐 Server Mode Active. Fetching from GitHub repository..."
-                        cleanWs()
-                        try {
-                            checkout([
-                                $class: 'GitSCM',
-                                branches: [[name: "*/${targetBranch}"]],
-                                extensions: [
-                                    [$class: 'CleanBeforeCheckout'],
-                                    [$class: 'CloneOption', timeout: 30, noTags: false, reference: '', shallow: false]
-                                ],
-                                userRemoteConfigs: [[
-                                    url: 'https://github.com/ku12nia/npm.git',
-                                    credentialsId: 'github-creds' // Tetap gunakan internal Jenkins SCM
-                                ]]
-                            ])
-                            echo "✅ Successfully checked out from branch: ${targetBranch}."
-                        } catch (Exception e) {
-                            echo "❌ Failed to check out code from branch: ${targetBranch}."
-                            error("Pipeline stopped because the repository checkout failed: ${e.getMessage()}")
-                        }
-                    }
+                    cleanWs()
+                    checkout([
+                        $class: 'GitSCM',
+                        branches: [[name: "*/${targetBranch}"]],
+                        extensions: [[$class: 'CleanBeforeCheckout']],
+                        userRemoteConfigs: [[
+                            url: 'https://github.com/ku12nia/npm.git',
+                            credentialsId: 'github-creds'
+                        ]]
+                    ])
+                    
+                    env.GIT_COMMIT_MSG = sh(script: 'git log -1 --pretty=%B', returnStdout: true).trim()
+                    env.GIT_COMMIT_AUTHOR = sh(script: 'git log -1 --pretty=%an', returnStdout: true).trim()
                 }
             }
         }
-        // Stage 2. Test App via Docker: Runs exclusively in the dev environment. It spins up a temporary node:22-alpine container to install dependencies and execute unit tests via Jest, publishing the JUnit XML test results.
+
         stage('2. Test App via Docker') {
-            when {
-                environment name: 'DEPLOY_ENV', value: 'dev'
-            }
+            when { environment name: 'TARGET_ENV', value: 'dev' }
             steps {
                 script {
                     def containerId = sh(script: 'hostname', returnStdout: true).trim()
-                    echo "🛠️ Running Unit Tests via Docker (Container ID: ${containerId})..."
-                    
                     dir('src') {
                         sh """
                         docker run --rm --volumes-from ${containerId} -w \${WORKSPACE}/src node:22-alpine sh -c "\
-                            sed -i '1s/^\\\\xEF\\\\xBB\\\\xBF//' package.json && \
-                            npm install && \
-                            npm install --save-dev jest jest-junit && \
+                            npm install && npm install --save-dev jest jest-junit && \
                             npx jest --ci --coverage --reporters=default --reporters=jest-junit --passWithNoTests \
                         "
                         """
@@ -108,175 +94,120 @@ pipeline {
                 success {
                     script {
                         if (fileExists('src/junit.xml')) {
-                            try { junit 'src/junit.xml' } catch (e) { echo "⚠️ JUnit report is invalid, skipping." }
+                            try { junit 'src/junit.xml' } catch (e) { echo "⚠️ JUnit report skipped." }
                         }
                     }
                 }
             }
         }
-        // Stage 3. Approval Gate (Production): Pauses the pipeline for up to 1 hour, requiring manual approval from an administrator before allowing any deployment to proceed to production.
-        stage('3. Approval Gate (Production)') {
-            when {
-                environment name: 'DEPLOY_ENV', value: 'prod'
-            }
+
+        // 🔥 SonarQube SAST Analysis Stage
+        stage('2.5. Security - SonarQube SAST') {
+            when { environment name: 'TARGET_ENV', value: 'dev' }
             steps {
                 script {
-                    echo "Waiting approval to deploy to Production."
-                    timeout(time: 1, unit: 'HOURS') {
-                        input(
-                            id: 'DeployToProd',
-                            message: "⚠️ Proceed with deployment to PRODUCTION using the image tag: ${params.IMAGE_TAG_TO_PROMOTE}?",
-                            ok: 'Approve & Deploy'
-                        )
+                    echo "🔍 Menjalankan analisis SonarQube SAST..."
+                    withSonarQubeEnv('sonar-server') {
+                        sh 'sonar-scanner'
                     }
-                    echo "✅ Deployment to production approved!"
                 }
             }
         }
-        // Stage 4. Build / Promote & Push Docker Image: For Dev: Pulls the previous dev image for cache reference and For Staging/Prod: Skips building entirely. Instead, it pulls the stable image specified by IMAGE_TAG_TO_PROMOTE
-        stage('4. Build / Promote & Push Docker Image') {
+
+        // 🔥 SonarQube Quality Gate Check Stage
+        stage('2.6. Security - SonarQube Quality Gate') {
+            when { environment name: 'TARGET_ENV', value: 'dev' }
             steps {
                 script {
-                    def targetEnv = params.DEPLOY_ENV
+                    echo "⏳ Menunggu hasil Quality Gate dari SonarQube..."
+                    timeout(time: 5, unit: 'MINUTES') {
+                        def qg = waitForQualityGate()
+                        if (qg.status != 'OK') {
+                            error "❌ Pipeline dibatalkan: SonarQube Quality Gate berstatus ${qg.status} (Ditemukan celah/bugs yang melanggar aturan)."
+                        } else {
+                            echo "✅ SonarQube Quality Gate Lolos!"
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('3. Approval Gate (Production)') {
+            when { environment name: 'TARGET_ENV', value: 'prod' }
+            steps {
+                input(message: "Proceed to PRODUCTION using image tag: ${params.IMAGE_TAG_TO_PROMOTE}?", ok: 'Approve & Deploy')
+            }
+        }
+
+        stage('4. Build & Push Docker Image') {
+            steps {
+                script {
+                    def targetEnv = env.TARGET_ENV
                     def imageRepo = "ku12nia/nodejs" 
                     def newImageTag = "${env.PADDED_BUILD_NUMBER}-${targetEnv}"
+                    
                     dir('src') {
-                    // For Dev: Pulls the previous dev image for cache reference, builds a new Docker image using BuildKit caching (--cache-from), and pushes it to Docker Hub.
                         if (targetEnv == 'dev') {
-                            echo "🔍 Pulling the previous dev image for cache reference."
                             sh "docker pull ${imageRepo}:dev-cache || true"
-                            
-                            echo "🏗️ Building a new Docker image (using BuildKit cache)."
-                            sh "DOCKER_BUILDKIT=1 docker build --cache-from ${imageRepo}:dev-cache --build-arg BUILDKIT_INLINE_CACHE=1 -t ${imageRepo}:${newImageTag} -t ${imageRepo}:dev-cache ."            
+                            sh "DOCKER_BUILDKIT=1 docker build --cache-from ${imageRepo}:dev-cache -t ${imageRepo}:${newImageTag} -t ${imageRepo}:dev-cache ."
                         } else {
-                    //  For Staging/Prod: Skips building entirely. Instead, it pulls the stable image specified by IMAGE_TAG_TO_PROMOTE, re-tags it for the target environment, and pushes it.   
-                            if (!params.IMAGE_TAG_TO_PROMOTE?.trim()) {
-                                error("❌ Deployment to ${targetEnv} has been cancelled! The 'IMAGE_TAG_TO_PROMOTE' parameter must be provided with a stable image tag (e.g., 01-dev).")
-                            }
-                            echo "🔄 Promote stable image (Tag: ${params.IMAGE_TAG_TO_PROMOTE}) to env ${targetEnv}."
                             sh "docker pull ${imageRepo}:${params.IMAGE_TAG_TO_PROMOTE}"
                             sh "docker tag ${imageRepo}:${params.IMAGE_TAG_TO_PROMOTE} ${imageRepo}:${newImageTag}"
-                            if (targetEnv == 'prod') {
-                                sh "docker tag ${imageRepo}:${newImageTag} ${imageRepo}:latest"
-                            }
+                            if (targetEnv == 'prod') { sh "docker tag ${imageRepo}:${newImageTag} ${imageRepo}:latest" }
                         }
                     }
-                    //  Environment-Specific Routing:
-                    //  If dev: The pipeline pushes an additional dev-cache tag. This acts as a caching reference for Docker BuildKit, which significantly speeds up subsequent image builds in the development environment.
-                    //  If prod: The pipeline pushes an additional latest tag. This guarantees that the production repository always has a definitive pointer to the most recent stable release. It also includes error handling to abort if the latest push fails.
-                    echo "🔐 Perform automatic authentication to Docker Hub using Vault secrets."
-                    def loginStatus = sh(
-                        script: """
-                            set +x
-                            echo "\$DOCKER_PASS" | docker login -u "\$DOCKER_USER" --password-stdin
-                        """, 
-                        returnStatus: true
-                    )
-                    if (loginStatus != 0) {
-                        error("❌ Failed to log in to Docker Hub! Check the credentials in Vault (secret/jenkins/dockerhub).")
-                    }
-                    echo "🚀 Pushing image tag: ${newImageTag} to Docker Hub."
-                    def pushStatus = sh(script: "docker push ${imageRepo}:${newImageTag}", returnStatus: true)
-                    
-                    if (pushStatus != 0) {
-                        error("❌ Failed to push image tag ${newImageTag} to Docker Hub! Pipeline stopped.")
-                    }
-                    
-                    if (targetEnv == 'dev') {
-                        echo "🚀 Pushing image cache referensi (dev-cache)..."
-                        sh "docker push ${imageRepo}:dev-cache"
-                    } else if (targetEnv == 'prod') {
-                        echo "🚀 Pushing image latest..."
-                        def pushLatest = sh(script: "docker push ${imageRepo}:latest", returnStatus: true)
-                        if (pushLatest != 0) {
-                            error("❌ Failed to push the 'latest' image. Pipeline stopped.")
-                        }
-                    }
+
+                    sh '''
+                        set +x
+                        echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+                    '''
+                    sh "docker push ${imageRepo}:${newImageTag}"
+                    if (targetEnv == 'dev') { sh "docker push ${imageRepo}:dev-cache" }
+                    else if (targetEnv == 'prod') { sh "docker push ${imageRepo}:latest" }
+                    sh "docker logout"
                 }
             }
         }
-        // Stage 5. Update Manifest & Push to Git: Automatically updates the corresponding Helm values file (k8s/helm-chart/values-<env>.yaml) with the new image tag using sed, then commits and pushes the changes back to GitHub using authentication tokens retrieved from Vault.
+
         stage('5. Update Manifest & Push to Git') {
             steps {
                 script {
-                    def targetEnv = params.DEPLOY_ENV
-                    def targetBranch = (targetEnv == 'prod') ? 'main' : targetEnv
+                    def targetEnv = env.TARGET_ENV
+                    def targetBranch = (targetEnv == 'prod') ? 'main' : (targetEnv == 'staging') ? 'staging' : 'dev' 
                     def newImageTag = "${env.PADDED_BUILD_NUMBER}-${targetEnv}"
-                    def targetValuesFile = "k8s/helm-chart/values-${targetEnv}.yaml" 
-                    echo "✨ Updating ${targetValuesFile} on branch: ${targetBranch}"
-                    sh "sed -i 's/tag: .*/tag: \"${newImageTag}\"/g' ${targetValuesFile}"
-                    sh 'git config --global user.email "dedimk.devops@gmail.com"'
-                    sh 'git config --global user.name "Dedi Mohammad Kurnia"'
-                    def changes = sh(script: 'git status --porcelain', returnStdout: true).trim()
+                    def targetValuesFile = "k8s/helm-chart/values-${targetEnv}.yaml"
                     
-                    if (changes != "") {
+                    sh "sed -i 's/tag: .*/tag: \"${newImageTag}\"/g' ${targetValuesFile}"
+                    
+                    def changes = sh(script: 'git status --porcelain', returnStdout: true).trim()
+                    if (changes) {
                         sh "git add ${targetValuesFile}"
                         sh "git commit -m 'ci(argocd): update helm image tag for ${targetEnv} to ${newImageTag} [skip ci]'"
                         
-                        // Push to GitHub using an authentication token from Vault
-                        def gitPushStatus = sh(
-                            script: "git push https://${GH_USER}:${GH_TOKEN}@github.com/ku12nia/npm.git HEAD:${targetBranch}", 
-                            returnStatus: true
-                        )
-                        if (gitPushStatus == 0) {
-                            echo "🚀 Successfully pushed the Helm manifest update to the GitHub branch ${targetBranch}!"
-                        } else {
-                            unstable("⚠️ WARNING: Failed to push to GitHub.")
-                        }
-                    } else {
-                        echo "⚠️ No changes to the manifest; skipping the git commit process."
+                        sh "git push https://${GH_USER}:${GH_TOKEN}@github.com/ku12nia/npm.git HEAD:${targetBranch}"
                     }
                 }
             }
         }
-        // Stage 6 (Trigger ArgoCD Sync CLI): Logs in to the ArgoCD server via the CLI. If the Kubernetes application does not yet exist, it registers it, then forces an ArgoCD synchronization so that changes to the Helm manifests in GitHub are immediately applied to the Kubernetes cluster.
+
         stage('6. Trigger ArgoCD Sync CLI') {
             steps {
                 script {
-                    def targetEnv = params.DEPLOY_ENV
-                    def targetBranch = (targetEnv == 'prod') ? 'main' : targetEnv
+                    def targetEnv = env.TARGET_ENV
                     def appName = "node-app-${targetEnv}" 
-                    def namespace = "${targetEnv}-apps" 
-                    def targetValuesFile = "values-${targetEnv}.yaml"
-                    def argocdServer = "host.docker.internal:80"
+                    
                     sh """
-                        set +x
-                        echo "🔐 Logging in to ArgoCD via CLI using a Vault secret."
-                        argocd login ${argocdServer} --username \$ARGOCD_USER --password \$ARGOCD_PASS --plaintext --grpc-web
-                        
-                        echo "📝 Ensuring application ${appName} is registered..."
-                        argocd app create ${appName} \
-                          --repo https://github.com/ku12nia/npm.git \
-                          --path k8s/helm-chart \
-                          --revision ${targetBranch} \
-                          --values ${targetValuesFile} \
-                          --dest-server https://kubernetes.default.svc \
-                          --dest-namespace ${namespace} \
-                          --sync-option CreateNamespace=true \
-                          --sync-option Replace=true \
-                          --upsert
-                        
-                        echo "🚀 Syncing application: ${appName}..."
+                        argocd login host.docker.internal:80 --username ${ARGOCD_USER} --password ${ARGOCD_PASS} --plaintext --grpc-web
                         argocd app sync ${appName} --replace
                     """
-                    
-                    echo "🔄 Sinkronisasi ArgoCD berhasil untuk ${appName}!"
                 }
             }
         }
     }
-    // Always: The always block ensures that temporary files such as node_modules, test coverage reports, JUnit XMLs, and temporary local binaries are cleaned up from the workspace to preserve server storage.
+    
     post {
         always {
-            script {
-                try {
-                    echo "🧹 Cleaning up the workspace to prevent the server disk from becoming full."
-                    sh 'rm -rf node_modules coverage junit.xml docker.tgz docker'
-                    echo "✨ The workspace is clean again!"
-                } catch (Exception e) {
-                    echo "⚠️ Cleanup was skipped because the workspace was not ready."
-                }
-            }
+            cleanWs(deleteDirs: true, disableDeferredWipeout: true)
         }
     }
 }
