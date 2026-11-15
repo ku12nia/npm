@@ -211,7 +211,6 @@ helm upgrade --install vault hashicorp/vault -n vault `
     --set "ui.enabled=true" `
     --set "ui.serviceType=LoadBalancer" `
     --set "ui.externalPort=8200"
-
 Write-Log "Waiting for Vault pod to be running..." -ForegroundColor Magenta
 while ($true) {
     $podPhase = kubectl get pod vault-0 -n vault -o jsonpath='{.status.phase}' 2>$null
@@ -263,7 +262,6 @@ if (-not $secretsList.'secret/') {
 } else {
     Write-Log "✅ Path 'secret/' already active." -ForegroundColor Green
 }
-
 Write-Log "Storing service credentials into Vault..." -ForegroundColor Yellow
 $secretsMap = @{
     "secret/database/postgres"  = @{ username = "postgres"; password = "$env:POSTGRES_PASSWORD" }
@@ -297,16 +295,13 @@ Write-Log "✅ All credentials successfully exported to Vault." -ForegroundColor
 Write-Host "==========================================================" -ForegroundColor Cyan
 Write-Host "PHASE 6: AUTOMATED SONARQUBE CONFIGURATION & TOKEN GENERATION" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
-
 $sonarUrl = "http://localhost:9002"
 $username = "admin"
 $customPassword = "Kul!kS0narLocal"
-
 Write-Log "Waiting for SonarQube to be ready..." -ForegroundColor Yellow
 $maxRetries = 30
 $retryCount = 0
 $isUp = $false
-
 while (-not $isUp -and $retryCount -lt $maxRetries) {
     try {
         $response = Invoke-RestMethod -Uri "$sonarUrl/api/system/status" -Method Get -TimeoutSec 5
@@ -325,11 +320,9 @@ if (-not $isUp) {
     Write-Log "[ERROR] SonarQube failed to respond in time." -ForegroundColor Red
     exit 1
 }
-
 $authString = "{0}:{1}" -f $username, $customPassword
 $base64AuthInfo = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes($authString))
 $headers = @{ Authorization = "Basic $base64AuthInfo" }
-
 try {
     Invoke-RestMethod -Uri "$sonarUrl/api/authentication/validate" -Method Get -Headers $headers -ErrorAction Stop | Out-Null
     Write-Log "[SUCCESS] Authenticated successfully with custom password." -ForegroundColor Green
@@ -353,11 +346,9 @@ try {
         exit 1
     }
 }
-
 $projectKey = "node-app-backend"
 $projectName = "Node JS Backend App"
 $encodedName = [uri]::EscapeDataString($projectName)
-
 try {
     Write-Log "Creating SonarQube project: $projectKey..." -ForegroundColor Cyan
     Invoke-RestMethod -Uri "$sonarUrl/api/projects/create?project=$projectKey&name=$encodedName" -Method Post -Headers $headers -ContentType "application/x-www-form-urlencoded" -ErrorAction Stop | Out-Null
@@ -365,21 +356,17 @@ try {
 } catch {
     Write-Log "[INFO] The SonarQube project may already exist; continuing..." -ForegroundColor Yellow
 }
-
 $tokenName = "jenkins-token-fixed"
 try {
     Write-Log "Revoking old tokens and generating a fresh static SonarQube token ($tokenName)..." -ForegroundColor Cyan
     try {
         Invoke-RestMethod -Uri "$sonarUrl/api/user_tokens/revoke?name=$tokenName" -Method Post -Headers $headers -ErrorAction SilentlyContinue | Out-Null
     } catch {}
-
     $tokenResponse = Invoke-RestMethod -Uri "$sonarUrl/api/user_tokens/generate?name=$tokenName" -Method Post -Headers $headers -ErrorAction Stop
     $sonarToken = $tokenResponse.token
     Write-Log "[SUCCESS] Static SonarQube token successfully generated!" -ForegroundColor Green
-
     $envFilePath = Join-Path $PSScriptRoot "..\..\.env"
     $envContent = if (Test-Path $envFilePath) { Get-Content $envFilePath -Raw } else { "" }
-
     if ([string]::IsNullOrWhiteSpace($envContent)) {
         $envContent = "SONAR_TOKEN=$sonarToken`nSONAR_PASSWORD=$customPassword"
     } else {
@@ -395,7 +382,6 @@ try {
             $envContent = $envContent.TrimEnd() + "`nSONAR_PASSWORD=$customPassword"
         }
     }
-
     Set-Content -Path $envFilePath -Value $envContent -Encoding utf8
     Write-Log "[SUCCESS] SONAR_TOKEN and SONAR_PASSWORD successfully saved to .env file!" -ForegroundColor Green
 } catch {

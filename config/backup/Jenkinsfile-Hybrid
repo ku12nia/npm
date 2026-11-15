@@ -361,36 +361,3 @@ pipeline {
         }
     }
 }
-
-// git credential-manager logout github.com
-// git credential-manager github list
-// git config --global credential.modalPrompt false
-// git rev-parse --is-inside-work-tree
-
-// 🚀 **Release PR: `dev` ➡️ `main`**
-
-// 📄 **Ringkasan**
-// Penggabungan *changes* dari branch `dev` ke `main` (atau target branch) untuk otomatisasi deployment service npm dan pembaruan pipeline CI/CD.
-
-// ⚙️ **Detail Perubahan (Changelog)**
-// - **CI/CD Pipeline (Jenkins):**
-//   - Update `Jenkinsfile` workflow untuk automated build & image tagging.
-// - **GitOps & Helm (ArgoCD):**
-//   - Update Helm chart values untuk service `npm` (image tag sync).
-//   - Konfigurasi auto-sync & prune logic di ArgoCD.
-// - **Dependencies & Config (Vault / MinIO / DB):**
-//   - *(Opsional)* Penyesuaian env vars/secrets atau migrasi database.
-
-// ---
-
-// ✅ **Checklist Verifikasi (Pre & Post Merge)**
-
-// **Pre-Merge (CI Phase)**
-// - [ ] **Jenkins Build:** Pipeline di Jenkins Local berhasil (*SUCCESS*).
-// - [ ] **Artifact Registry:** Container image / package sukses ter-push ke Nexus/DockerHub.
-// - [ ] **Secrets Check:** Tidak ada plaintext credentials/secrets yang ter-commit ke Git (menggunakan Vault).
-
-// **Post-Merge (CD & Monitoring Phase)**
-// - [ ] **ArgoCD Sync:** Status aplikasi di Argo CD Local berubah menjadi `Synced` & `Healthy`.
-// - [ ] **Telegram Alert:** Bot Telegram menerima notifikasi webhook status deployment.
-// - [ ] **Metrics & Monitoring:** Health check service `npm` normal di Grafana / Prometheus Local.
