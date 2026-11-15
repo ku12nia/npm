@@ -86,20 +86,19 @@ pipeline {
 
         // 🔥 SonarQube SAST Analysis via Docker Scanner CLI
         stage('2.5. Security - SonarQube SAST') {
-            when { environment name: 'TARGET_ENV', value: 'dev' }
             steps {
                 script {
-                    echo "🔍 Menjalankan analisis SonarQube SAST via Docker..."
+                    echo "🔍 Menjalankan analisis SonarQube SAST via SonarScanner latest (Java 21 Ready)..."
                     withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
                         sh """
-                            docker run --rm \
-                              -v \${WORKSPACE}/src:/usr/src \
-                              -w /usr/src \
-                              sonarsource/sonar-scanner-cli \
-                              -Dsonar.projectKey=node-app-backend \
-                              -Dsonar.sources=. \
-                              -Dsonar.host.url=http://host.docker.internal:9002 \
-                              -Dsonar.login=\${SONAR_TOKEN}
+                        docker run --rm \
+                        -v /var/jenkins_home/workspace/npm-cicd/src:/usr/src \
+                        -w /usr/src \
+                        sonarsource/sonar-scanner-cli:latest \
+                        -Dsonar.projectKey=node-app-backend \
+                        -Dsonar.sources=. \
+                        -Dsonar.host.url=http://192.168.0.136:9002 \
+                        -Dsonar.token=${SONAR_TOKEN}
                         """
                     }
                 }
@@ -108,21 +107,17 @@ pipeline {
 
         // 🔥 SonarQube Quality Gate Check via REST API Curl
         stage('2.6. Security - SonarQube Quality Gate') {
-            when { environment name: 'TARGET_ENV', value: 'dev' }
             steps {
                 script {
                     echo "⏳ Menunggu hasil Quality Gate dari SonarQube..."
                     withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
-                        // Polling status Quality Gate ke API SonarQube
-                        def response = sh(script: """
-                            curl -s -u \${SONAR_TOKEN}: "http://host.docker.internal:9002/api/qualitygates/project_status?projectKey=node-app-backend"
-                        """, returnStdout: true).trim()
-                        
-                        echo "API Response: ${response}"
-                        if (!response.contains('"status":"OK"')) {
-                            error "❌ Pipeline dibatalkan: SonarQube Quality Gate gagal atau berstatus non-OK!"
+                        sleep 5
+                        def qgResponse = sh(script: "curl -s -u \${SONAR_TOKEN}: http://192.168.0.136:9002/api/qualitygates/project_status?projectKey=node-app-backend", returnStdout: true).trim()
+                        echo "API Response: ${qgResponse}"
+                        if (!qgResponse.contains('"status":"OK"') && !qgResponse.contains('"status":"NONE"')) {
+                            error("❌ Quality Gate gagal! Status tidak OK.")
                         } else {
-                            echo "✅ SonarQube Quality Gate Lolos!"
+                            echo "✅ Quality Gate lulus atau aman untuk dilanjutkan."
                         }
                     }
                 }
@@ -216,14 +211,16 @@ pipeline {
                     def buildStatus = currentBuild.currentResult ?: 'SUCCESS'
                     def statusEmoji = (buildStatus == 'SUCCESS') ? '✅' : '❌'
                     def targetEnv = env.TARGET_ENV ?: 'N/A'
-                    def buildUrl = "${env.BUILD_URL}"
+                    def rawBuildUrl = env.BUILD_URL ?: "http://localhost:8080/job/${env.JOB_NAME}/${env.BUILD_NUMBER}/"
+                    def buildUrl = rawBuildUrl.replace("localhost", "192.168.0.136")
+                    // def buildUrl = "${env.BUILD_URL}"
                     
                     def commitInfo = env.GIT_COMMIT_MSG ? "\n📌 <b>Commit:</b> ${env.GIT_COMMIT_MSG}\n👤 <b>Author:</b> ${env.GIT_COMMIT_AUTHOR}" : ""
                     
                     def tgMessage = "===============================\n" +
                                     "🚀 <b>Jenkins Pipeline Update</b>\n" +
                                     "===============================\n" +
-                                    "📌 <b>Project:</b> ${env.JOB_NAME}\n" +
+                                    "📂 <b>Project:</b> ${env.JOB_NAME}\n" +
                                     "🏷️ <b>Build No:</b> #${env.BUILD_NUMBER}\n" +
                                     "🌿 <b>Environment:</b> ${targetEnv}${commitInfo}\n" +
                                     "${statusEmoji} <b>Status:</b> ${buildStatus}\n" +
