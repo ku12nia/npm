@@ -88,7 +88,7 @@ pipeline {
         stage('2.5. Security - SonarQube SAST') {
             steps {
                 script {
-                    echo "🔍 Menjalankan analisis SonarQube SAST via SonarScanner latest (Java 21 Ready)..."
+                    echo "🔍 Running SonarQube SAST analysis via the latest SonarScanner (Java 21 Ready)..."
                     withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
                         sh """
                         docker run --rm \
@@ -115,9 +115,9 @@ pipeline {
                         def qgResponse = sh(script: "curl -s -u \${SONAR_TOKEN}: http://192.168.0.136:9002/api/qualitygates/project_status?projectKey=node-app-backend", returnStdout: true).trim()
                         echo "API Response: ${qgResponse}"
                         if (!qgResponse.contains('"status":"OK"') && !qgResponse.contains('"status":"NONE"')) {
-                            error("❌ Quality Gate gagal! Status tidak OK.")
+                            error("❌ Quality Gate failed! Status not OK.")
                         } else {
-                            echo "✅ Quality Gate lulus atau aman untuk dilanjutkan."
+                            echo "✅ Quality Gate passed or safe to proceed."
                         }
                     }
                 }
@@ -166,21 +166,43 @@ pipeline {
         stage('5. Update Manifest & Push to Git') {
             steps {
                 script {
-                    def targetEnv = env.TARGET_ENV
+                    def targetEnv = env.TARGET_ENV ?: 'dev'
                     def targetBranch = (targetEnv == 'prod') ? 'main' : (targetEnv == 'staging') ? 'staging' : 'dev' 
                     def newImageTag = "${env.PADDED_BUILD_NUMBER}-${targetEnv}"
                     def targetValuesFile = "k8s/helm-chart/values-${targetEnv}.yaml"
                     
+                    echo "📂 Updating manifest for environment: ${targetEnv} (File: ${targetValuesFile})"
+                    
+                    // 1. Update image tag in the corresponding Helm values file
                     sh "sed -i 's/tag: .*/tag: \"${newImageTag}\"/g' ${targetValuesFile}"
                     
+                    // 2. Check if there are any actual file changes
                     def changes = sh(script: 'git status --porcelain', returnStdout: true).trim()
                     if (changes) {
-                        sh "git add ${targetValuesFile}"
-                        sh "git commit -m 'ci(argocd): update helm image tag for ${targetEnv} to ${newImageTag} [skip ci]'"
-                        
-                        withCredentials([gitUsernamePassword(credentialsId: 'github-creds')]) {
-                            sh "git push origin HEAD:${targetBranch}"
+                        // 3. Enforce push policy: Only 'dev' is allowed to auto-push
+                        if (targetEnv == 'dev') {
+                            echo "🚀 Environment is 'dev'. Automatically committing and pushing to branch '${targetBranch}'..."
+                            
+                            sh """
+                            git config user.name "Dedi Mohammad Kurnia"
+                            git config user.email "kurniawan.noperfect@gmail.com"
+                            git add ${targetValuesFile}
+                            git commit -m "ci(argocd): update helm image tag for ${targetEnv} to ${newImageTag} [skip ci]"
+                            """
+                            
+                            withCredentials([gitUsernamePassword(credentialsId: 'github-creds')]) {
+                                sh "git push origin HEAD:${targetBranch}"
+                            }
+                            echo "✅ Manifest successfully pushed to branch '${targetBranch}'."
+                        } else {
+                            echo "⚠️ Security Policy: Auto-push is DISABLED for environment '${targetEnv}' (Staging/Prod)."
+                            echo "💡 Skipping git commit & push. Manifest changes remain local for this pipeline run."
+                            
+                            // Revert local changes to keep the workspace clean
+                            sh "git checkout ${targetValuesFile}"
                         }
+                    } else {
+                        echo "ℹ️ No changes detected in ${targetValuesFile}."
                     }
                 }
             }
