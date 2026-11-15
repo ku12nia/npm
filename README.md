@@ -153,11 +153,28 @@ git commit -m "fix(security): sanitize exposed secrets"
 git push
 ```
 
-🔑 **Troubleshooting Windows Git Credential Conflicts**
+🔑 **Troubleshooting Windows Git Credential Conflicts:**
 If you encounter an issue where a commit or push incorrectly uses a teammate's account credentials due to stale cache in the Windows Credential Manager, clear and reset your credentials by following these steps:
-```bash
-cmdkey /delete:LegacyGeneric:target=git:https://github.com
-echo "ghp_TOKEN_BARU_ANDA" | gh auth login --with-token
+
+1. **Clear old generic credentials from Windows Credential Manager:**
+   ```powershell
+   cmdkey /delete:LegacyGeneric:target=git:https://github.com
+   ```
+
+2. **Re-authenticate via GitHub CLI (`gh`):**
+   ```bash
+   echo "ghp_TOKEN_BARU_ANDA" | gh auth login --with-token
+   ```
+
+🌿 **Resolving "Detached HEAD" Push Issues:**
+If you accidentally made commits while in a detached HEAD state and `git push origin dev` throws a `fatal: You are not currently on a branch` error, save your changes by creating a temporary branch and pushing it to remote `dev`:
+```powershell
+git checkout -b temp-dev
+git push origin temp-dev:dev
+
+# Switch back to local dev branch
+git checkout dev
+git pull origin dev
 ```
 
 ---
@@ -223,7 +240,7 @@ To access services routed through the Nginx Ingress Controller (like Grafana and
 Regardless of the installation method (Vagrant or Host Docker), services are mapped to your `localhost` or local domains. Upon successful execution, credentials are automatically injected into **HashiCorp Vault KV v2** (`secret/`):
 
 - **Jenkins:** `http://localhost:8080` (User: `jenkins`, Pass: `jenkins`)
-  - Configured Credentials Store: with Username Password = `dockerhub-creds`, `github-creds`, `argocd-creds`, with Secret Text = `telegram-bot-token`,`sonar-token`.
+  - Configured Credentials Store: `dockerhub-creds`, `github-creds`, `argocd-creds`.
 - **SonarQube:** `http://localhost:9000` (User: `admin`, Pass: `admin`)
 - **Nexus 3:** `http://localhost:8082` (User: `admin`, Pass: `P4ssw0rdNexus`)
 - **ArgoCD Dashboard:** `http://argocd.local` (User: `admin`, Pass: `P4ssw0rdArgoCD`)
@@ -233,7 +250,7 @@ Regardless of the installation method (Vagrant or Host Docker), services are map
 - **Prometheus:** `http://localhost:9090`
 - **ActiveMQ Artemis:** `http://localhost:8161` (User: `admin`, Pass: `artemisadmin`)
 - **pgAdmin (Helm / Kubernetes):** `http://localhost:8081` (User: `dedimk.devops@gmail.com`, Pass: `pgadmin-local`)
-- **PostgreSQL:** `localhost:5432` (User: `postgres`, Pass: `pg-local`)
+- **PostgreSQL (Docker Desktop):** `localhost:5432` (User: `postgres`, Pass: `pg-local`)
 - **MinIO:** `http://localhost:9001` (User: `admin`, Pass: `minioadmin`)
 
 ---
