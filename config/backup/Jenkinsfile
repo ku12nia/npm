@@ -28,32 +28,49 @@ pipeline {
                 }
             }
         }
-        // Stage 1. Checkout Code
+    // Stage 1. Checkout Code
         stage('1. Checkout Code') {
             steps {
                 script {
-                    def targetEnv = env.TARGET_ENV
-                    def targetBranch = (targetEnv == 'prod') ? 'main' : (targetEnv == 'staging') ? 'staging' : 'dev'
+                    def targetEnv = env.TARGET_ENV ?: 'dev'
+                    // Untuk staging/prod, arahkan fallback ke branch dev/main untuk ambil file manifest Helm chart
+                    def targetBranch = (targetEnv == 'prod') ? 'main' : 'dev' 
                     
-                    try {
-                        cleanWs(deleteDirs: true, disableDeferredWipeout: true)
-                    } catch (Exception e) {
-                        echo "⚠️ Warning: cleanWs failed, forcing cleanup..."
-                        sh 'rm -rf * .git || true'
-                    }
+                    if (env.LOCAL_SRC_PATH) {
+                        echo "💻 Local Directory Mode Active!"
+                        if (!fileExists('Jenkinsfile')) {
+                            error("❌ Workspace kosong! Pastikan repo sudah di-clone di folder host Windows.")
+                        } else {
+                            echo "✅ Local source code siap dibuild."
+                        }
+                    } else {
+                        echo "🌐 Server Mode Active. Mengambil repository untuk environment: ${targetEnv} (Branch: ${targetBranch})..."
+                        cleanWs()
+                        try {
+                            checkout([
+                                $class: 'GitSCM',
+                                branches: [[name: "*/${targetBranch}"]],
+                                extensions: [
+                                    [$class: 'CleanBeforeCheckout'],
+                                    [$class: 'CloneOption', timeout: 30, noTags: false, reference: '', shallow: false]
+                                ],
+                                userRemoteConfigs: [[
+                                    url: 'https://github.com/ku12nia/npm.git',
+                                    credentialsId: 'github-creds'
+                                ]]
+                            ])
+                            echo "✅ Berhasil checkout dari branch: ${targetBranch}."
 
-                    checkout([
-                        $class: 'GitSCM',
-                        branches: [[name: "*/${targetBranch}"]],
-                        extensions: [[$class: 'CleanBeforeCheckout']],
-                        userRemoteConfigs: [[
-                            url: 'https://github.com/ku12nia/npm.git',
-                            credentialsId: 'github-creds'
-                        ]]
-                    ])
-                    
-                    env.GIT_COMMIT_MSG = sh(script: 'git log -1 --pretty=%B', returnStdout: true).trim()
-                    env.GIT_COMMIT_AUTHOR = sh(script: 'git log -1 --pretty=%an', returnStdout: true).trim()
+                            env.GIT_COMMIT_MSG = sh(script: 'git log -1 --pretty=%B', returnStdout: true).trim()
+                            env.GIT_COMMIT_AUTHOR = sh(script: 'git log -1 --pretty=%an', returnStdout: true).trim()
+                            echo "Triggered by: ${env.GIT_COMMIT_AUTHOR}"
+                            echo "Commit Message: ${env.GIT_COMMIT_MSG}"
+
+                        } catch (Exception e) {
+                            echo "❌ Gagal checkout code dari branch: ${targetBranch}."
+                            error("Pipeline dihentikan karena gagal checkout repository: ${e.getMessage()}")
+                        }
+                    }
                 }
             }
         }
@@ -138,28 +155,36 @@ pipeline {
                     
                     dir('src') {
                         if (targetEnv == 'dev') {
+                            // Build fresh image for development with caching
                             sh "docker pull ${imageRepo}:dev-cache || true"
                             sh "DOCKER_BUILDKIT=1 docker build --cache-from ${imageRepo}:dev-cache -t ${imageRepo}:${newImageTag} -t ${imageRepo}:dev-cache ."
                         } else {
+                            // Promote existing validated image for staging/production without rebuilding
                             sh "docker pull ${imageRepo}:${params.IMAGE_TAG_TO_PROMOTE}"
                             sh "docker tag ${imageRepo}:${params.IMAGE_TAG_TO_PROMOTE} ${imageRepo}:${newImageTag}"
-                            if (targetEnv == 'prod') { sh "docker tag ${imageRepo}:${newImageTag} ${imageRepo}:latest" }
+                            if (targetEnv == 'prod') { 
+                                sh "docker tag ${imageRepo}:${newImageTag} ${imageRepo}:latest" 
+                            }
                         }
                     }
+                    // Push images securely to Docker Hub registry
                     withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', passwordVariable: 'DOCKER_PASS', usernameVariable: 'DOCKER_USER')]) {
                         sh '''
                             set +x
                             echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
                         '''
                         sh "docker push ${imageRepo}:${newImageTag}"
-                        if (targetEnv == 'dev') { sh "docker push ${imageRepo}:dev-cache" }
-                        else if (targetEnv == 'prod') { sh "docker push ${imageRepo}:latest" }
+                        if (targetEnv == 'dev') { 
+                            sh "docker push ${imageRepo}:dev-cache" 
+                        } else if (targetEnv == 'prod') { 
+                            sh "docker push ${imageRepo}:latest" 
+                        }
                         sh "docker logout"
                     }
                 }
             }
         }
-        // Stage 5: Update Manifest & Push to Git
+        // Stage 5. Update Manifest & Push to Git (Dev-Only Auto-Push Policy)
         stage('5. Update Manifest & Push to Git') {
             steps {
                 script {
@@ -168,14 +193,15 @@ pipeline {
                     def newImageTag = "${env.PADDED_BUILD_NUMBER}-${targetEnv}"
                     def targetValuesFile = "k8s/helm-chart/values-${targetEnv}.yaml"
                     echo "📂 Updating manifest for environment: ${targetEnv} (File: ${targetValuesFile})"
-                    // 1. Update image tag in the corresponding Helm values file
+                    // 1. Update image tag in the corresponding Helm values file via sed
                     sh "sed -i 's/tag: .*/tag: \"${newImageTag}\"/g' ${targetValuesFile}"
-                    // 2. Check if there are any actual file changes
+                    // 2. Check for actual file modifications in the workspace
                     def changes = sh(script: 'git status --porcelain', returnStdout: true).trim()
                     if (changes) {
-                        // 3. Enforce push policy: Only 'dev' is allowed to auto-push
+                        // 3. Enforce strict push governance: Only 'dev' is allowed to auto-push
                         if (targetEnv == 'dev') {
-                            echo "🚀 Environment is 'dev'. Automatically committing and pushing to branch '${targetBranch}'..."
+                            echo "🚀 Environment is 'dev'. Automatically committing and pushing changes to branch '${targetBranch}'..."
+                            
                             sh """
                             git config user.name "Dedi Mohammad Kurnia"
                             git config user.email "kurniawan.noperfect@gmail.com"
@@ -188,9 +214,9 @@ pipeline {
                             echo "✅ Manifest successfully pushed to branch '${targetBranch}'."
                         } else {
                             echo "⚠️ Security Policy: Auto-push is DISABLED for environment '${targetEnv}' (Staging/Prod)."
-                            echo "💡 Skipping git commit & push. Manifest changes remain local for this pipeline run."
+                            echo "💡 Skipping git commit & push. Workspace will be reverted to keep staging/prod branches clean."
                             
-                            // Revert local changes to keep the workspace clean
+                            // Revert local modifications so the workspace remains pristine
                             sh "git checkout ${targetValuesFile}"
                         }
                     } else {

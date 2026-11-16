@@ -152,7 +152,20 @@ pipeline {
                     def targetEnv = env.TARGET_ENV
                     def imageRepo = "ku12nia/nodejs" 
                     def newImageTag = "${env.PADDED_BUILD_NUMBER}-${targetEnv}"
-                    
+                    def tagToPromote = params.IMAGE_TAG_TO_PROMOTE ?: ''
+                    // --- STRICT PROMOTION CHAIN VALIDATION ---
+                    if (targetEnv == 'staging') {
+                        if (!tagToPromote.endsWith('-dev')) {
+                            error("❌ Staging Policy Violation: Image to promote (${tagToPromote}) WAHIB berasal dari tag 'dev' (contoh: 55-dev).")
+                        }
+                        echo "✅ Validated: Staging image is promoted from a valid Dev artifact (${tagToPromote})."
+                    } else if (targetEnv == 'prod') {
+                        if (!tagToPromote.endsWith('-staging')) {
+                            error("❌ Production Policy Violation: Image to promote (${tagToPromote}) WAJIB berasal dari tag 'staging' (contoh: 55-staging).")
+                        }
+                        echo "✅ Validated: Production image is promoted from a verified Staging artifact (${tagToPromote})."
+                    }
+                    // ------------------------------------------
                     dir('src') {
                         if (targetEnv == 'dev') {
                             // Build fresh image for development with caching
@@ -160,8 +173,8 @@ pipeline {
                             sh "DOCKER_BUILDKIT=1 docker build --cache-from ${imageRepo}:dev-cache -t ${imageRepo}:${newImageTag} -t ${imageRepo}:dev-cache ."
                         } else {
                             // Promote existing validated image for staging/production without rebuilding
-                            sh "docker pull ${imageRepo}:${params.IMAGE_TAG_TO_PROMOTE}"
-                            sh "docker tag ${imageRepo}:${params.IMAGE_TAG_TO_PROMOTE} ${imageRepo}:${newImageTag}"
+                            sh "docker pull ${imageRepo}:${tagToPromote}"
+                            sh "docker tag ${imageRepo}:${tagToPromote} ${imageRepo}:${newImageTag}"
                             if (targetEnv == 'prod') { 
                                 sh "docker tag ${imageRepo}:${newImageTag} ${imageRepo}:latest" 
                             }
@@ -240,14 +253,14 @@ pipeline {
                     def buildUrl = rawBuildUrl.replace("localhost", "192.168.0.136")
                     // def buildUrl = "${env.BUILD_URL}"
                     def commitInfo = env.GIT_COMMIT_MSG ? "\n📌 <b>Commit:</b> ${env.GIT_COMMIT_MSG}\n👤 <b>Author:</b> ${env.GIT_COMMIT_AUTHOR}" : ""
-                    def tgMessage = "===============================\n" +
+                    def tgMessage = "===========================\n" +
                                     "🚀 <b>Jenkins Pipeline Update</b>\n" +
-                                    "===============================\n" +
+                                    "===========================\n" +
                                     "📂 <b>Project:</b> ${env.JOB_NAME}\n" +
                                     "🏷️ <b>Build No:</b> #${env.BUILD_NUMBER}\n" +
                                     "🌿 <b>Environment:</b> ${targetEnv}${commitInfo}\n" +
                                     "${statusEmoji} <b>Status:</b> ${buildStatus}\n" +
-                                    "===============================\n" +
+                                    "===========================\n" +
                                     "📝 <a href='${buildUrl}'>Log Build = ${buildUrl}</a>"
                     withCredentials([string(credentialsId: 'telegram-bot-token', variable: 'TELEGRAM_TOKEN')]) {
                         def chatId = "-1003786747095"
@@ -263,51 +276,6 @@ pipeline {
                     echo "⚠️ Failed to send Telegram notification: ${e.getMessage()}"
                 }
             }
-
-            // script {
-            //     try {
-            //         echo "🧹 Cleaning up the workspace to prevent the server disk from becoming full."
-            //         cleanWs(deleteDirs: true, disableDeferredWipeout: true)
-            //         echo "✨ Workspace cleaned successfully."
-            //     } catch (Exception e) {
-            //         echo "⚠️ Cleanup was skipped because the workspace was not ready."
-            //     }
-            // }
-
-            // script {
-            //     try {
-            //         echo "📱 Sending notification to Telegram..."
-            //         def buildStatus = currentBuild.currentResult ?: 'SUCCESS'
-            //         def statusEmoji = (buildStatus == 'SUCCESS') ? '✅' : '❌'
-            //         def targetEnv = env.TARGET_ENV ?: 'N/A'
-            //         def buildUrl = "${env.BUILD_URL}"
-                    
-            //         def commitInfo = env.GIT_COMMIT_MSG ? "\n📌 <b>Commit:</b> ${env.GIT_COMMIT_MSG}\n👤 <b>Author:</b> ${env.GIT_COMMIT_AUTHOR}" : ""
-                    
-            //         def tgMessage = "===============================\n" +
-            //                         "🚀 <b>Jenkins Pipeline Update</b>\n" +
-            //                         "===============================\n" +
-            //                         "📌 <b>Project:</b> ${env.JOB_NAME}\n" +
-            //                         "🏷️ <b>Build No:</b> #${env.BUILD_NUMBER}\n" +
-            //                         "🌿 <b>Environment:</b> ${targetEnv}${commitInfo}\n" +
-            //                         "${statusEmoji} <b>Status:</b> ${buildStatus}\n" +
-            //                         "===============================\n" +
-            //                         "📝 <a href='${buildUrl}'>Log Build = ${buildUrl}</a>"
-
-            //         withCredentials([string(credentialsId: 'telegram-bot-token', variable: 'TELEGRAM_TOKEN')]) {
-            //             def chatId = "-1003786747095"
-            //             sh """
-            //                 curl -s -X POST "https://api.telegram.org/bot\${TELEGRAM_TOKEN}/sendMessage" \
-            //                 -d chat_id="${chatId}" \
-            //                 -d parse_mode="HTML" \
-            //                 --data-urlencode text="${tgMessage}"
-            //             """
-            //         }
-            //         echo "📨 Telegram notification successfully sent."
-            //     } catch (Exception e) {
-            //         echo "⚠️ Failed to send Telegram notification: ${e.getMessage()}"
-            //     }
-            // }
 
         }
     }
