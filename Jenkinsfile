@@ -28,32 +28,49 @@ pipeline {
                 }
             }
         }
-        // Stage 1. Checkout Code
+    // Stage 1. Checkout Code
         stage('1. Checkout Code') {
             steps {
                 script {
-                    def targetEnv = env.TARGET_ENV
-                    def targetBranch = (targetEnv == 'prod') ? 'main' : (targetEnv == 'staging') ? 'staging' : 'dev'
+                    def targetEnv = env.TARGET_ENV ?: 'dev'
+                    // Untuk staging/prod, arahkan fallback ke branch dev/main untuk ambil file manifest Helm chart
+                    def targetBranch = (targetEnv == 'prod') ? 'main' : 'dev' 
                     
-                    try {
-                        cleanWs(deleteDirs: true, disableDeferredWipeout: true)
-                    } catch (Exception e) {
-                        echo "⚠️ Warning: cleanWs failed, forcing cleanup..."
-                        sh 'rm -rf * .git || true'
-                    }
+                    if (env.LOCAL_SRC_PATH) {
+                        echo "💻 Local Directory Mode Active!"
+                        if (!fileExists('Jenkinsfile')) {
+                            error("❌ Workspace kosong! Pastikan repo sudah di-clone di folder host Windows.")
+                        } else {
+                            echo "✅ Local source code siap dibuild."
+                        }
+                    } else {
+                        echo "🌐 Server Mode Active. Mengambil repository untuk environment: ${targetEnv} (Branch: ${targetBranch})..."
+                        cleanWs()
+                        try {
+                            checkout([
+                                $class: 'GitSCM',
+                                branches: [[name: "*/${targetBranch}"]],
+                                extensions: [
+                                    [$class: 'CleanBeforeCheckout'],
+                                    [$class: 'CloneOption', timeout: 30, noTags: false, reference: '', shallow: false]
+                                ],
+                                userRemoteConfigs: [[
+                                    url: 'https://github.com/ku12nia/npm.git',
+                                    credentialsId: 'github-creds'
+                                ]]
+                            ])
+                            echo "✅ Berhasil checkout dari branch: ${targetBranch}."
 
-                    checkout([
-                        $class: 'GitSCM',
-                        branches: [[name: "*/${targetBranch}"]],
-                        extensions: [[$class: 'CleanBeforeCheckout']],
-                        userRemoteConfigs: [[
-                            url: 'https://github.com/ku12nia/npm.git',
-                            credentialsId: 'github-creds'
-                        ]]
-                    ])
-                    
-                    env.GIT_COMMIT_MSG = sh(script: 'git log -1 --pretty=%B', returnStdout: true).trim()
-                    env.GIT_COMMIT_AUTHOR = sh(script: 'git log -1 --pretty=%an', returnStdout: true).trim()
+                            env.GIT_COMMIT_MSG = sh(script: 'git log -1 --pretty=%B', returnStdout: true).trim()
+                            env.GIT_COMMIT_AUTHOR = sh(script: 'git log -1 --pretty=%an', returnStdout: true).trim()
+                            echo "Triggered by: ${env.GIT_COMMIT_AUTHOR}"
+                            echo "Commit Message: ${env.GIT_COMMIT_MSG}"
+
+                        } catch (Exception e) {
+                            echo "❌ Gagal checkout code dari branch: ${targetBranch}."
+                            error("Pipeline dihentikan karena gagal checkout repository: ${e.getMessage()}")
+                        }
+                    }
                 }
             }
         }
