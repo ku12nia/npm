@@ -1,6 +1,8 @@
 ﻿# ==============================================================================
 # DEVOPS LAB AUTOMATION SCRIPT (K3s, Docker, Vault, ArgoCD, Nexus, Terraform)
 # ==============================================================================
+$ErrorActionPreference = "Stop"
+
 function Write-Log {
     param (
         [Parameter(Mandatory=$true)]
@@ -11,13 +13,17 @@ function Write-Log {
     Write-Host "[$timestamp] $Message" -ForegroundColor $ForegroundColor
 }
 
+# Resolve Project Root dynamically so paths work regardless of where script is invoked
+$ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
+Set-Location $ProjectRoot
 
 Write-Host "`n==========================================================" -ForegroundColor Cyan
 Write-Host "PHASE 0: PREREQUISITES, BINARY AUTO-COPY & ENVIRONMENT SETUP" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
-if (Test-Path ".env") {
-    Write-Log "Loading environment variables from .env file..." -ForegroundColor Cyan
-    Get-Content ".env" | ForEach-Object {
+$envFilePath = Join-Path $ProjectRoot ".env"
+if (Test-Path $envFilePath) {
+    Write-Log "Loading environment variables from $envFilePath..." -ForegroundColor Cyan
+    Get-Content $envFilePath | ForEach-Object {
         if ($_ -match '^\s*([^#\s][^=]+)=(.*)$') {
             $name  = $matches[1].Trim()
             $value = $matches[2].Trim()
@@ -26,7 +32,7 @@ if (Test-Path ".env") {
     }
     Write-Log "✅ .env loaded successfully." -ForegroundColor Green
 } else {
-    Write-Log "⚠️ Warning: .env file not found! Please create it before proceeding." -ForegroundColor Red
+    Write-Log "⚠️ Warning: .env file not found at $envFilePath! Please create it before proceeding." -ForegroundColor Red
     exit 1
 }
 
@@ -34,7 +40,7 @@ $WorkspaceName = if ($env:WORKSPACE_NAME) { $env:WORKSPACE_NAME } else { "npm-ci
 $WorkspaceDir = "/var/jenkins_home/workspace/$WorkspaceName"
 
 # --- AUTOMATED BINARY DIRECTORY CHECK & FALLBACK RESOLUTION ---
-$parentBinPath = Join-Path $PSScriptRoot "..\..\bin"
+$parentBinPath = Join-Path $ProjectRoot "bin"
 $siblingBinPath = "C:\Users\evoel\Downloads\labs_dedi\bin"
 
 if (Test-Path $parentBinPath) {
@@ -48,6 +54,7 @@ if (Test-Path $parentBinPath) {
     $binFolderPath = $parentBinPath
     New-Item -ItemType Directory -Force -Path $binFolderPath | Out-Null
 }
+
 $requiredBinaries = @(
     "docker-24.0.9.tgz",
     "buildx-v0.14.0.linux-amd64",
@@ -56,19 +63,10 @@ $requiredBinaries = @(
     "sonar-scanner-cli-5.0.1.3006-linux.zip",
     "terraform_1.9.0_linux_amd64.zip"
 )
-$missingFiles = @()
-foreach ($binFile in $requiredBinaries) {
-    $filePath = Join-Path $binFolderPath $binFile
-    if (-not (Test-Path $filePath)) {
-        $missingFiles += $binFile
-    }
-}
+$missingFiles = $requiredBinaries | Where-Object { -not (Test-Path (Join-Path $binFolderPath $_)) }
+
 if ($missingFiles.Count -gt 0) {
-    Write-Log "⚠️ Warning: The following binaries are missing inside the target directory:" -ForegroundColor Yellow
-    foreach ($miss in $missingFiles) {
-        Write-Log "   - $miss" -ForegroundColor DarkYellow
-    }
-    # Auto-copy fallback source from Downloads if available
+    Write-Log "⚠️ Warning: Missing binaries detected, checking Downloads fallback..." -ForegroundColor Yellow
     $fallbackSource = "C:\Users\evoel\Downloads"
     foreach ($miss in $missingFiles) {
         $possibleSource = Join-Path $fallbackSource $miss
@@ -77,26 +75,13 @@ if ($missingFiles.Count -gt 0) {
             Copy-Item -Path $possibleSource -Destination (Join-Path $binFolderPath $miss) -Force
         }
     }
-    # Re-verify after auto-copy attempt
-    $stillMissing = @()
-    foreach ($binFile in $requiredBinaries) {
-        if (-not (Test-Path (Join-Path $binFolderPath $binFile))) {
-            $stillMissing += $binFile
-        }
-    }
+    $stillMissing = $requiredBinaries | Where-Object { -not (Test-Path (Join-Path $binFolderPath $_)) }
     if ($stillMissing.Count -gt 0) {
-        Write-Log "❌ Error: Some required binaries are still missing and could not be resolved automatically:" -ForegroundColor Red
-        foreach ($miss in $stillMissing) {
-            Write-Log "   - $miss" -ForegroundColor Red
-        }
-        Write-Log "💡 Please place these files into the 'bin/' folder manually, and the script will handle the rest." -ForegroundColor Yellow
+        Write-Log "❌ Error: Required binaries still missing: $($stillMissing -join ', ')" -ForegroundColor Red
         exit 1
-    } else {
-        Write-Log "✅ All missing binaries were successfully auto-copied and verified!" -ForegroundColor Green
     }
-} else {
-    Write-Log "✅ All required binaries are complete and verified." -ForegroundColor Green
 }
+Write-Log "✅ All required binaries are complete and verified." -ForegroundColor Green
 
 
 Write-Host "`n==========================================================" -ForegroundColor Cyan
@@ -108,9 +93,8 @@ if (-not [string]::IsNullOrWhiteSpace($env:DOCKER_USER) -and -not [string]::IsNu
     if ($LASTEXITCODE -ne 0) {
         Write-Log "❌ Docker login failed! Check your credentials in .env" -ForegroundColor Red
         exit 1
-    } else {
-        Write-Log "✅ Docker login successful!" -ForegroundColor Green
     }
+    Write-Log "✅ Docker login successful!" -ForegroundColor Green
 } else {
     Write-Log "⚠️ DOCKER_USER/DOCKER_PASS not found, skipping explicit login..." -ForegroundColor Yellow
 }
@@ -121,13 +105,11 @@ docker run --rm -v nexus_data:/nexus-data alpine chown -R 200:200 /nexus-data 2>
 
 Write-Log "Launching Docker Compose stack from root context..." -ForegroundColor Cyan
 docker compose -f config/docker-compose.yml build --no-cache jenkins
-# docker compose -f config/docker-compose.yml build --force-recreate jenkins
 docker compose -f config/docker-compose.yml up -d
 
 Write-Log "Waiting for Docker containers to initialize (20s)..." -ForegroundColor Magenta
 Start-Sleep -Seconds 20
 
-# Extract Jenkins Initial Password
 $jenkinsId = docker ps -q --filter "name=jenkins"
 $jenkinsPass = ""
 if ($jenkinsId) {
@@ -140,39 +122,70 @@ if ([string]::IsNullOrWhiteSpace($jenkinsPass)) {
 
 
 Write-Host "`n==========================================================" -ForegroundColor Cyan
-Write-Host "PHASE 2: ARGO CD SETUP & PASSWORD LOCKING" -ForegroundColor Yellow
-Write-Host "==========================================================" -ForegroundColor Cyan
-kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f - | Out-Null
-kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml | Out-Null
-Write-Log "Waiting for Argo CD pods to become ready..." -ForegroundColor Magenta
-kubectl wait --for=condition=ready pod --all -n argocd --timeout=300s | Out-Null
-$argocdPass = "P4ssw0rdArgoCD"
-Write-Log "Locking the ArgoCD admin password..." -ForegroundColor Cyan
-$bcryptOutput = kubectl exec -n argocd deploy/argocd-server -- argocd account bcrypt --password $argocdPass 2>$null
-$bcryptHash = ($bcryptOutput | Select-Object -Last 1).Trim()
-$encodedHash = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($bcryptHash))
-$encodedMtime = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes((Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")))
-$patchContent = "{ `"data`": { `"admin.password`": `"$encodedHash`", `"admin.passwordMtime`": `"$encodedMtime`" } }"
-$patchContent | Out-File -FilePath "argo-patch.json" -Encoding utf8
-kubectl patch secret argocd-secret -n argocd --type='merge' --patch-file argo-patch.json | Out-Null
-Remove-Item "argo-patch.json" -ErrorAction SilentlyContinue
-kubectl delete secret argocd-initial-admin-secret -n argocd --ignore-not-found=true | Out-Null
-kubectl apply -f k8s/argocd.yaml | Out-Null
-kubectl rollout restart deploy/argocd-server -n argocd | Out-Null
-kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=argocd-server -n argocd --timeout=120s | Out-Null
-Write-Log "✅ ArgoCD successfully configured." -ForegroundColor Green
-
-
-Write-Host "`n==========================================================" -ForegroundColor Cyan
-Write-Host "PHASE 3: KUBERNETES CORE NETWORKING (Ingress-Nginx)" -ForegroundColor Yellow
+Write-Host "PHASE 2: KUBERNETES CORE NETWORKING (Ingress-Nginx)" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
 helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx | Out-Null
 helm repo update | Out-Null
 helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx `
     --namespace ingress-nginx `
     --create-namespace `
-    --set controller.service.type=LoadBalancer | Out-Null
+    --set controller.service.type=LoadBalancer `
+    --wait --timeout 180s
+if ($LASTEXITCODE -ne 0) { Write-Log "❌ Ingress-Nginx deployment failed." -ForegroundColor Red; exit 1 }
 Write-Log "✅ Ingress Nginx ready." -ForegroundColor Green
+
+
+Write-Host "`n==========================================================" -ForegroundColor Cyan
+Write-Host "PHASE 3: ARGO CD SETUP, CRD FIX & INGRESS" -ForegroundColor Yellow
+Write-Host "==========================================================" -ForegroundColor Cyan
+kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
+
+# FIX: Gunakan --server-side agar CRD ApplicationSet (>262KB) tidak terpotong & gagal
+Write-Log "Applying ArgoCD manifests (with Server-Side Apply for CRDs)..." -ForegroundColor Cyan
+kubectl apply --server-side --force-conflicts -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/v3.6.1/manifests/install.yaml
+if ($LASTEXITCODE -ne 0) { Write-Log "❌ Failed to apply ArgoCD install.yaml" -ForegroundColor Red; exit 1 }
+
+# Verifikasi CRD ApplicationSet benar-benar terpasang
+kubectl wait --for=condition=Established crd/applicationsets.argoproj.io --timeout=60s
+
+Write-Log "Waiting for Argo CD pods to become ready..." -ForegroundColor Magenta
+kubectl wait --for=condition=ready pod --all -n argocd --timeout=300s
+
+$argocdPass = "P4ssw0rdArgoCD"
+Write-Log "Locking the ArgoCD admin password..." -ForegroundColor Cyan
+$bcryptOutput = kubectl exec -n argocd deploy/argocd-server -- argocd account bcrypt --password $argocdPass
+$bcryptHash = ($bcryptOutput | Select-Object -Last 1).Trim()
+$encodedHash = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($bcryptHash))
+$encodedMtime = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes((Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")))
+$patchContent = "{ `"data`": { `"admin.password`": `"$encodedHash`", `"admin.passwordMtime`": `"$encodedMtime`" } }"
+$patchFile = Join-Path $ProjectRoot "argo-patch.json"
+$patchContent | Out-File -FilePath $patchFile -Encoding utf8
+kubectl patch secret argocd-secret -n argocd --type='merge' --patch-file $patchFile
+Remove-Item $patchFile -ErrorAction SilentlyContinue
+kubectl delete secret argocd-initial-admin-secret -n argocd --ignore-not-found=true
+
+# FIX: Validasi dan apply k8s/argocd.yaml (Ingress + ConfigMaps) tanpa menelan error
+$argocdCustomManifest = Join-Path $ProjectRoot "k8s\argocd.yaml"
+if (Test-Path $argocdCustomManifest) {
+    Write-Log "Applying custom ArgoCD ConfigMaps & Ingress ($argocdCustomManifest)..." -ForegroundColor Cyan
+    kubectl apply -f $argocdCustomManifest
+    if ($LASTEXITCODE -ne 0) { Write-Log "❌ Failed to apply $argocdCustomManifest" -ForegroundColor Red; exit 1 }
+} else {
+    Write-Log "❌ File $argocdCustomManifest not found!" -ForegroundColor Red
+    exit 1
+}
+
+# Restart argocd-server agar server.insecure: "true" dari argocd-cmd-params-cm aktif
+kubectl rollout restart deploy/argocd-server -n argocd
+kubectl rollout status deploy/argocd-server -n argocd --timeout=120s
+
+# FIX: Apply k8s/application.yaml untuk environment dev, staging, prod
+$argocdAppsManifest = Join-Path $ProjectRoot "k8s\application.yaml"
+if (Test-Path $argocdAppsManifest) {
+    Write-Log "Applying ArgoCD Applications ($argocdAppsManifest)..." -ForegroundColor Cyan
+    kubectl apply -f $argocdAppsManifest
+}
+Write-Log "✅ ArgoCD successfully configured and exposed at http://argocd.local." -ForegroundColor Green
 
 
 Write-Host "`n==========================================================" -ForegroundColor Cyan
@@ -196,7 +209,7 @@ helm uninstall vault -n vault --no-hooks --ignore-not-found 2>$null
 kubectl delete namespace vault --force --grace-period=0 --ignore-not-found 2>$null
 kubectl delete mutatingwebhookconfiguration,validatingwebhookconfiguration -l app.kubernetes.io/name=vault --ignore-not-found=true 2>$null
 kubectl delete clusterrole,clusterrolebinding -l app.kubernetes.io/name=vault --ignore-not-found=true 2>$null
-$keyFile = "vault-keys.json"
+$keyFile = Join-Path $ProjectRoot "vault-keys.json"
 if (Test-Path $keyFile) { Remove-Item $keyFile -Force -ErrorAction SilentlyContinue }
 kubectl create namespace vault --dry-run=client -o yaml | kubectl apply -f - | Out-Null
 helm repo add hashicorp https://helm.releases.hashicorp.com | Out-Null
@@ -211,6 +224,7 @@ helm upgrade --install vault hashicorp/vault -n vault `
     --set "ui.enabled=true" `
     --set "ui.serviceType=LoadBalancer" `
     --set "ui.externalPort=8200"
+
 Write-Log "Waiting for Vault pod to be running..." -ForegroundColor Magenta
 while ($true) {
     $podPhase = kubectl get pod vault-0 -n vault -o jsonpath='{.status.phase}' 2>$null
@@ -221,46 +235,30 @@ while ($true) {
     Start-Sleep -Seconds 3
 }
 Start-Sleep -Seconds 5
-Write-Log "Checking Vault status..." -ForegroundColor Cyan
 $vaultStatusJson = kubectl exec -n vault vault-0 -- vault status -format=json 2>$null
-if (-not $vaultStatusJson) {
-    Write-Log "❌ Failed to connect to Vault container." -ForegroundColor Red
-    exit 1
-}
+if (-not $vaultStatusJson) { Write-Log "❌ Failed to connect to Vault container." -ForegroundColor Red; exit 1 }
 $vaultStatus = $vaultStatusJson | ConvertFrom-Json
 if (-not $vaultStatus.initialized) {
     Write-Log "⚙️ Initializing Vault (1 Key Share)..." -ForegroundColor Cyan
     kubectl exec -n vault vault-0 -- vault operator init -key-shares=1 -key-threshold=1 -format=json | Out-File -FilePath $keyFile -Encoding utf8
     Write-Log "✅ Vault initialized & keys saved." -ForegroundColor Green
-} else {
-    Write-Log "✅ Vault was already initialized." -ForegroundColor Green
-}
-if (-not (Test-Path $keyFile)) {
-    Write-Log "❌ File $keyFile not found! Cannot unseal." -ForegroundColor Red
-    exit 1
 }
 $vaultKeys = Get-Content $keyFile | ConvertFrom-Json
 $unsealKey = $vaultKeys.unseal_keys_b64[0]
 $vaultRootToken = $vaultKeys.root_token
-$vaultStatusJson = kubectl exec -n vault vault-0 -- vault status -format=json 2>$null
-$vaultStatus = $vaultStatusJson | ConvertFrom-Json
+$vaultStatus = (kubectl exec -n vault vault-0 -- vault status -format=json 2>$null) | ConvertFrom-Json
 if ($vaultStatus.sealed) {
     Write-Log "🔐 Unsealing Vault..." -ForegroundColor Cyan
     kubectl exec -n vault vault-0 -- vault operator unseal $unsealKey | Out-Null
     Write-Log "🔓 Vault unsealed successfully!" -ForegroundColor Green
-} else {
-    Write-Log "🔓 Vault is already unsealed." -ForegroundColor Green
 }
 
 Write-Log "Logging into Vault and enabling KV v2 secrets engine..." -ForegroundColor Cyan
 kubectl exec -n vault vault-0 -- vault login $vaultRootToken | Out-Null
-$secretsListJson = kubectl exec -n vault vault-0 -- vault secrets list -format=json 2>$null
-$secretsList = $secretsListJson | ConvertFrom-Json
+$secretsList = (kubectl exec -n vault vault-0 -- vault secrets list -format=json 2>$null) | ConvertFrom-Json
 if (-not $secretsList.'secret/') {
     kubectl exec -n vault vault-0 -- vault secrets enable -path=secret -version=2 kv | Out-Null
     Write-Log "✅ KV v2 Secrets Engine enabled at 'secret/'." -ForegroundColor Green
-} else {
-    Write-Log "✅ Path 'secret/' already active." -ForegroundColor Green
 }
 Write-Log "Storing service credentials into Vault..." -ForegroundColor Yellow
 $secretsMap = @{
@@ -292,7 +290,7 @@ foreach ($path in $secretsMap.Keys) {
 Write-Log "✅ All credentials successfully exported to Vault." -ForegroundColor Green
 
 
-Write-Host "==========================================================" -ForegroundColor Cyan
+Write-Host "`n==========================================================" -ForegroundColor Cyan
 Write-Host "PHASE 6: AUTOMATED SONARQUBE CONFIGURATION & TOKEN GENERATION" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
 $sonarUrl = "http://localhost:9002"
@@ -315,11 +313,8 @@ while (-not $isUp -and $retryCount -lt $maxRetries) {
         Write-Log "Attempting to connect to SonarQube ($retryCount/$maxRetries)..." -ForegroundColor DarkGray
     }
 }
+if (-not $isUp) { Write-Log "[ERROR] SonarQube failed to respond in time." -ForegroundColor Red; exit 1 }
 
-if (-not $isUp) {
-    Write-Log "[ERROR] SonarQube failed to respond in time." -ForegroundColor Red
-    exit 1
-}
 $authString = "{0}:{1}" -f $username, $customPassword
 $base64AuthInfo = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes($authString))
 $headers = @{ Authorization = "Basic $base64AuthInfo" }
@@ -328,62 +323,36 @@ try {
     Write-Log "[SUCCESS] Authenticated successfully with custom password." -ForegroundColor Green
 } catch {
     Write-Log "[INFO] Custom password not set yet. Trying default credentials (admin:admin)..." -ForegroundColor Yellow
-    
     $defaultAuthString = "{0}:admin" -f $username
     $defaultBase64 = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes($defaultAuthString))
     $defaultHeaders = @{ Authorization = "Basic $defaultBase64" }
-
-    try {
-        $body = @{
-            login            = "admin"
-            previousPassword = "admin"
-            password         = $customPassword
-        }
-        Invoke-RestMethod -Uri "$sonarUrl/api/users/change_password" -Method Post -Headers $defaultHeaders -Body $body -ContentType "application/x-www-form-urlencoded" -ErrorAction Stop | Out-Null
-        Write-Log "[SUCCESS] Admin password successfully updated to: $customPassword" -ForegroundColor Green
-    } catch {
-        Write-Log "[ERROR] Failed to update password: $_" -ForegroundColor Red
-        exit 1
-    }
+    $body = @{ login = "admin"; previousPassword = "admin"; password = $customPassword }
+    Invoke-RestMethod -Uri "$sonarUrl/api/users/change_password" -Method Post -Headers $defaultHeaders -Body $body -ContentType "application/x-www-form-urlencoded" -ErrorAction Stop | Out-Null
+    Write-Log "[SUCCESS] Admin password successfully updated to: $customPassword" -ForegroundColor Green
 }
+
 $projectKey = "node-app-backend"
 $projectName = "Node JS Backend App"
 $encodedName = [uri]::EscapeDataString($projectName)
 try {
-    Write-Log "Creating SonarQube project: $projectKey..." -ForegroundColor Cyan
     Invoke-RestMethod -Uri "$sonarUrl/api/projects/create?project=$projectKey&name=$encodedName" -Method Post -Headers $headers -ContentType "application/x-www-form-urlencoded" -ErrorAction Stop | Out-Null
     Write-Log "[SUCCESS] SonarQube project successfully created!" -ForegroundColor Green
 } catch {
     Write-Log "[INFO] The SonarQube project may already exist; continuing..." -ForegroundColor Yellow
 }
+
 $tokenName = "jenkins-token-fixed"
 try {
-    Write-Log "Revoking old tokens and generating a fresh static SonarQube token ($tokenName)..." -ForegroundColor Cyan
-    try {
-        Invoke-RestMethod -Uri "$sonarUrl/api/user_tokens/revoke?name=$tokenName" -Method Post -Headers $headers -ErrorAction SilentlyContinue | Out-Null
-    } catch {}
+    try { Invoke-RestMethod -Uri "$sonarUrl/api/user_tokens/revoke?name=$tokenName" -Method Post -Headers $headers -ErrorAction SilentlyContinue | Out-Null } catch {}
     $tokenResponse = Invoke-RestMethod -Uri "$sonarUrl/api/user_tokens/generate?name=$tokenName" -Method Post -Headers $headers -ErrorAction Stop
     $sonarToken = $tokenResponse.token
-    Write-Log "[SUCCESS] Static SonarQube token successfully generated!" -ForegroundColor Green
-    $envFilePath = Join-Path $PSScriptRoot "..\..\.env"
-    $envContent = if (Test-Path $envFilePath) { Get-Content $envFilePath -Raw } else { "" }
-    if ([string]::IsNullOrWhiteSpace($envContent)) {
-        $envContent = "SONAR_TOKEN=$sonarToken`nSONAR_PASSWORD=$customPassword"
-    } else {
-        if ($envContent -match "SONAR_TOKEN=") {
-            $envContent = $envContent -replace "SONAR_TOKEN=.*", "SONAR_TOKEN=$sonarToken"
-        } else {
-            $envContent = $envContent.TrimEnd() + "`nSONAR_TOKEN=$sonarToken"
-        }
-
-        if ($envContent -match "SONAR_PASSWORD=") {
-            $envContent = $envContent -replace "SONAR_PASSWORD=.*", "SONAR_PASSWORD=$customPassword"
-        } else {
-            $envContent = $envContent.TrimEnd() + "`nSONAR_PASSWORD=$customPassword"
-        }
-    }
+    $envContent = Get-Content $envFilePath -Raw
+    if ($envContent -match "SONAR_TOKEN=") { $envContent = $envContent -replace "SONAR_TOKEN=.*", "SONAR_TOKEN=$sonarToken" }
+    else { $envContent = $envContent.TrimEnd() + "`nSONAR_TOKEN=$sonarToken" }
+    if ($envContent -match "SONAR_PASSWORD=") { $envContent = $envContent -replace "SONAR_PASSWORD=.*", "SONAR_PASSWORD=$customPassword" }
+    else { $envContent = $envContent.TrimEnd() + "`nSONAR_PASSWORD=$customPassword" }
     Set-Content -Path $envFilePath -Value $envContent -Encoding utf8
-    Write-Log "[SUCCESS] SONAR_TOKEN and SONAR_PASSWORD successfully saved to .env file!" -ForegroundColor Green
+    Write-Log "[SUCCESS] SONAR_TOKEN and SONAR_PASSWORD saved to .env!" -ForegroundColor Green
 } catch {
     Write-Log "[ERROR] Failed to generate SonarQube token: $_" -ForegroundColor Red
 }
@@ -397,6 +366,26 @@ $nexusUrl = "http://127.0.0.1:8082"
 $repoName = "raw-binaries"
 $nexusPass = $env:NEXUS_PASSWORD
 
+# FIX: Tunggu sampai REST API Nexus siap
+Write-Log "Waiting for Nexus 3 REST API to be ready..." -ForegroundColor Yellow
+$nexusReady = $false
+for ($i = 1; $i -le 30; $i++) {
+    try {
+        Invoke-RestMethod -Uri "$nexusUrl/service/rest/v1/status" -Method Get -TimeoutSec 5 -ErrorAction Stop | Out-Null
+        $nexusReady = $true
+        Write-Log "✅ Nexus 3 is up and ready!" -ForegroundColor Green
+        break
+    } catch {
+        Start-Sleep -Seconds 5
+        Write-Log "Attempting to connect to Nexus ($i/30)..." -ForegroundColor DarkGray
+    }
+}
+
+if (-not $nexusReady) {
+    Write-Log "❌ Nexus failed to respond in time." -ForegroundColor Red
+    exit 1
+}
+
 if ([string]::IsNullOrWhiteSpace($nexusPass)) {
     Write-Log "⚠️ NEXUS_PASSWORD not found in .env! Skipping Nexus uploads." -ForegroundColor Red
 } else {
@@ -405,6 +394,28 @@ if ([string]::IsNullOrWhiteSpace($nexusPass)) {
         Authorization  = ("Basic {0}" -f $base64AuthInfo)
         "Content-Type" = "application/json"
     }
+
+    # FIX: Jika ini fresh install Nexus, otomatis ambil initial password & ganti ke $nexusPass
+    try {
+        Invoke-RestMethod -Uri "$nexusUrl/service/rest/v1/repositories" -Method Get -Headers $headers -ErrorAction Stop | Out-Null
+    } catch {
+        $nexusContainerId = docker ps -q --filter "name=nexus"
+        if ($nexusContainerId) {
+            $initNexusPass = (docker exec $nexusContainerId cat /nexus-data/admin.password 2>$null)
+            if ($initNexusPass) {
+                $initNexusPass = $initNexusPass.Trim()
+                Write-Log "🔄 First-time Nexus setup detected. Updating admin password..." -ForegroundColor Cyan
+                $initBase64 = [Convert]::ToBase64String([System.Text.Encoding]::ASCII.GetBytes(("admin:{0}" -f $initNexusPass)))
+                $initHeaders = @{ Authorization = ("Basic {0}" -f $initBase64); "Content-Type" = "text/plain" }
+                Invoke-RestMethod -Uri "$nexusUrl/service/rest/v1/security/users/admin/change-password" -Method Put -Headers $initHeaders -Body $nexusPass -ErrorAction Stop | Out-Null
+                # Accept EULA / disable anonymous atau complete onboarding
+                $eulaBody = @{ accepted = $true } | ConvertTo-Json
+                Invoke-RestMethod -Uri "$nexusUrl/service/rest/v1/system/eula" -Method Post -Headers $headers -Body $eulaBody -ErrorAction SilentlyContinue | Out-Null
+                Write-Log "✅ Nexus admin password updated to .env value." -ForegroundColor Green
+            }
+        }
+    }
+
     $repoPayload = @{
         name   = $repoName
         online = $true
@@ -416,7 +427,6 @@ if ([string]::IsNullOrWhiteSpace($nexusPass)) {
         raw = @{ contentDisposition = "ATTACHMENT" }
     } | ConvertTo-Json -Depth 10
 
-    $authFailed = $false
     try {
         Invoke-RestMethod -Uri "$nexusUrl/service/rest/v1/repositories/raw/hosted" -Method Post -Headers $headers -Body $repoPayload -ErrorAction Stop | Out-Null
         Write-Log "✅ Repository '$repoName' created via API." -ForegroundColor Green
@@ -424,27 +434,23 @@ if ([string]::IsNullOrWhiteSpace($nexusPass)) {
         $statusCode = $_.Exception.Response.StatusCode.Value__
         if ($statusCode -eq 401) {
             Write-Log "❌ Authentication Failed! Invalid Nexus password." -ForegroundColor Red
-            $authFailed = $true
+            exit 1
         } else {
             Write-Log "✅ Repository '$repoName' already exists. Proceeding to uploads..." -ForegroundColor Green
         }
     }
 
-    if (-not $authFailed -and (Test-Path $binFolderPath)) {
+    if (Test-Path $binFolderPath) {
         $files = Get-ChildItem -Path $binFolderPath -File
-        if ($files.Count -gt 0) {
-            foreach ($file in $files) {
-                Write-Log "⬆️ Uploading $($file.Name) to Nexus..." -ForegroundColor Yellow
-                $uploadUrl = "$nexusUrl/repository/$repoName/$($file.Name)"
-                $curlOutput = curl.exe --silent --show-error --fail -u "admin:$nexusPass" -T "$($file.FullName)" "$uploadUrl" 2>&1
-                if ($LASTEXITCODE -eq 0) {
-                    Write-Log "✅ Uploaded $($file.Name)." -ForegroundColor Green
-                } else {
-                    Write-Log "⚠️ Failed to upload $($file.Name): $curlOutput" -ForegroundColor Red
-                }
+        foreach ($file in $files) {
+            Write-Log "⬆️ Uploading $($file.Name) to Nexus..." -ForegroundColor Yellow
+            $uploadUrl = "$nexusUrl/repository/$repoName/$($file.Name)"
+            $curlOutput = curl.exe --silent --show-error --fail -u "admin:$nexusPass" -T "$($file.FullName)" "$uploadUrl" 2>&1
+            if ($LASTEXITCODE -eq 0) {
+                Write-Log "✅ Uploaded $($file.Name)." -ForegroundColor Green
+            } else {
+                Write-Log "⚠️ Failed to upload $($file.Name): $curlOutput" -ForegroundColor Red
             }
-        } else {
-            Write-Log "⚠️ Folder $binFolderPath is empty." -ForegroundColor Yellow
         }
     }
 }
@@ -459,7 +465,7 @@ Write-Log " - Jenkins     : http://localhost:8080"
 Write-Log "   InitAdmin   : $jenkinsPass (Login: jenkins / jenkins)" -ForegroundColor Green
 Write-Log " - Argo CD     : http://argocd.local (User: admin, Pass: $argocdPass)" -ForegroundColor Green
 Write-Log " - Nexus 3     : http://localhost:8082 (User: admin, Pass: $nexusPass)" -ForegroundColor Green
-Write-Log " - SonarQube   : http://localhost:9002 (User: admin, Pass: admin)" -ForegroundColor Green
+Write-Log " - SonarQube   : http://localhost:9002 (User: admin, Pass: $customPassword)" -ForegroundColor Green
 Write-Log " - PostgreSQL  : localhost:5432 (User: postgres, Pass: $($env:POSTGRES_PASSWORD))"
 Write-Log " - PGAdmin     : http://localhost:8081 (User: $($env:PGADMIN_EMAIL), Pass: $($env:PGADMIN_PASSWORD))"
 Write-Log " - Vault       : http://localhost:8200 (Token: $vaultRootToken)" -ForegroundColor Green

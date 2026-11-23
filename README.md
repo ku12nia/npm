@@ -241,7 +241,7 @@ Regardless of the installation method (Vagrant or Host Docker), services are map
 
 - **Jenkins:** `http://localhost:8080` (User: `jenkins`, Pass: `jenkins`)
   - Configured Credentials Store: `dockerhub-creds`, `github-creds`, `argocd-creds`.
-- **SonarQube:** `http://localhost:9000` (User: `admin`, Pass: `admin`)
+- **SonarQube:** `http://localhost:9000` (User: `admin`, PassDefault: `admin`, PassCustom: `Kul!kS0narLocal`)
 - **Nexus 3:** `http://localhost:8082` (User: `admin`, Pass: `P4ssw0rdNexus`)
 - **ArgoCD Dashboard:** `http://argocd.local` (User: `admin`, Pass: `P4ssw0rdArgoCD`)
 - **HashiCorp Vault:** `http://localhost:8200` 
